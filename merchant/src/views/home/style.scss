@@ -1,0 +1,67 @@
+.content-head {
+  background: #fff;
+  color: #666;
+
+  .seller {
+    .icon {
+      float: left;
+      width: 60px;
+      height: 60px;
+      border-radius: 60px;
+      background-size: cover;
+      margin-right: 12px;
+      overflow: hidden;
+
+      img {
+        width: 100%;
+      }
+    }
+
+    .seller-content {
+      margin-left: 60px;
+      font-size: 16px;
+      line-height: 20px;
+
+      .address {
+        font-size: 14px;
+        color: #666666;
+        line-height: 25px;
+        margin-top: 12px;
+      }
+    }
+  }
+
+  .price {
+    color: #FF0000;
+    font-size: 20px;
+  }
+
+  .label {
+    margin-top: 10px;
+  }
+}
+
+// card
+.homeCard{
+  background: #fff;
+  .title{
+    font-size: 20px;
+  }
+  .text{
+    font-size: 14px;
+    line-height: 1.8;
+    margin-top: 40px;
+    p{
+      display: inline-block;
+    }
+    p + p{
+      margin-left: 60px;
+    }
+  }
+  .text + .text{
+    margin-top: 0;
+  }
+  .other{
+    margin-top: 15px;
+  }
+}
