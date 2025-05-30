@@ -8,10 +8,9 @@ from tortoise.expressions import Q
 
 from config.settings import ACCESS_TOKEN_EXPIRE_DAYS, DEBUG, DEV
 from module.common.accepts import SuccessResponse
-from module.common.constrants import AVATAR_STATIC_PATH, DEFALT_PASSWORD, ROLE_ADMIN, DEBUG_PASSWORD, ROLE_SEPARATED, ROLE_STAFF
+from module.common.constrants import AVATAR_STATIC_PATH, DEFALT_PASSWORD, DEBUG_PASSWORD
 from module.common.exceptions import BadRequest, NoPermission, TooManyRequest
 from module.common.global_variable import DataResponse
-from module.common.models import PageMenu, SystemParameter
 from module.common.pydantics import UserOperation
 from module.common.redis_client import cache_client
 from module.common.utils import get_now_UTC_time
@@ -23,14 +22,11 @@ from module.user.pydantics import (
     UserDisablePydantic,
     UserEditPydantic,
     UserInfoORMPydantic,
-    UserInfoPydantic,
     UserModifyPasswordPydantic,
     UserPydantic,
     UserResetPasswordPydantic,
 )
-from module.user.utils import create_access_token, current_user, get_password_hash, set_user_id_nickname_mapping, verify_password
-from module.user.group_apis import router as group_router
-from module.user.performance_apis import router as perf_router
+from module.user.utils import create_access_token, current_user, get_password_hash, verify_password
 
 router = APIRouter()
 
@@ -53,7 +49,7 @@ async def post_token(request: Request, user: OAuth2PasswordRequestForm = Depends
             raise TooManyRequest('密码尝试次数过多, 请5分钟后重试')
         raise BadRequest('密码错误')
 
-    if user_obj.disabled or user_obj.role_id == ROLE_SEPARATED:
+    if user_obj.disabled:
         if await cache_client.limit_opt_cache(user_obj.id, UserOperation.TRY_PASSWORD):
             raise TooManyRequest('密码尝试次数过多, 请5分钟后重试')
         raise NoPermission('账户异常, 无法登录')
@@ -91,15 +87,8 @@ async def get_user_info(user_id: Optional[str] = None, me: User = Depends(curren
     if user_id:
         data = await UserInfoORMPydantic.from_queryset_single(User.get_or_none(id=user_id))
     else:
-        sp = await SystemParameter.get(name='user_leader_mapping')
-        user_leader_mapping = sp.get_data()
-        menus = await PageMenu.filter(id__in=me.role.page_menu)
         data = {
             'userinfo': UserDetailORMPydantic.model_validate(me),
-            'menus': menus,
-            'role': me.role_id,
-            'isLeader': user_leader_mapping.get(str(me.id)) == me.id,
-            'group_id': me.group_id,
         }
 
     return DataResponse(data=data)
@@ -114,25 +103,14 @@ async def get_user_list(query: Optional[str] = None, me: User = Depends(current_
         users = users.filter(Q(nickname__icontains=query) | Q(email__icontains=query) | Q(phone__icontains=query)).distinct()
     # 暂时无需分页
     # users = users.offset((pageNum - 1) * pageSize).limit(pageSize)
-    if me.role_id == ROLE_ADMIN:
-        users = [UserPydantic.model_validate(u) for u in await users]
-    else:
-        users = [UserInfoPydantic.model_validate(u) for u in await users]
+    users = [UserPydantic.model_validate(u) for u in await users]
     return DataResponse(data=users)
 
 
 @router.post('/create/')
 async def post_create_user(user: UserCreatePydantic, me: User = Depends(current_user)):
     """admin and system admin can create user"""
-    if me.role_id != ROLE_ADMIN:
-        raise BadRequest('只有管理员允许创建用户账号')
-    if await User.filter(username=user.username).exists():
-        raise BadRequest("账号已存在, 请使用其他账号")
-    user = await User.create(
-        **user.model_dump(),
-        role_id=ROLE_STAFF,
-    )
-    await set_user_id_nickname_mapping()
+    user = await User.create(**user.model_dump())
     return SuccessResponse()
 
 
@@ -165,43 +143,24 @@ async def post_upload_template(file: UploadFile, me: User = Depends(current_user
 @router.put('/edit/')
 async def put_edit_info(params: UserEditPydantic, me: User = Depends(current_user)):
     """user edit info"""
-    is_admin = me.role_id == ROLE_ADMIN
     user_obj = me
-    if is_admin and params.id:
-        user_obj = await User.get_or_none(id=params.id)
     if params.nickname:
         user_obj.nickname = params.nickname
-    if params.post:
-        user_obj.post = params.post
     if params.avatar:
         user_obj.avatar = params.avatar
     if params.phone:
-        if not user_obj.phone or is_admin:
+        if not user_obj.phone:
             user_obj.phone = params.phone
         else:
             raise BadRequest('电话号码不能修改, 请联系管理员')
     if params.email:
-        if not user_obj.email or is_admin:
+        if not user_obj.email:
             user_obj.email = params.email
         else:
             raise BadRequest('电子邮箱不能修改, 请联系管理员')
-    if is_admin:
-        if params.username:
-            if await User.exists(username=params.username):
-                raise BadRequest('用户名不可重复')
-            user_obj.username = params.username
-        if params.standard_workday:
-            user_obj.standard_workday = params.standard_workday
-        if params.leave_date:
-            user_obj.leave_date = params.leave_date
-        if params.join_date:
-            user_obj.join_date = params.join_date
-        if params.role_id:
-            user_obj.role_id = params.role_id
-    if not is_admin and await cache_client.limit_opt_cache(str(user_obj.id), UserOperation.EDIT_INFO):
+    if await cache_client.limit_opt_cache(str(user_obj.id), UserOperation.EDIT_INFO):
         raise TooManyRequest('修改失败, 请30分钟之后再试')
     await user_obj.save()
-    await set_user_id_nickname_mapping()
     return DataResponse(data=UserInfoORMPydantic.model_validate(me))
 
 
@@ -229,7 +188,3 @@ async def put_forbbiden_user(param: UserDisablePydantic, me: User = Depends(curr
     user.disabled = param.disabled
     await user.save()
     return DataResponse(data=UserInfoORMPydantic.model_validate(user))
-
-
-router.include_router(group_router)
-router.include_router(perf_router)

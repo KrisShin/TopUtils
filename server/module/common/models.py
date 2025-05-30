@@ -1,29 +1,8 @@
-from datetime import date, datetime
-from enum import Enum, IntEnum
+from datetime import datetime
+from enum import Enum
 import json
 
 from tortoise import fields, models
-
-
-class PeriodEnum(Enum):
-    DAY = 'day'
-    WEEK = 'week'
-    MONTH = 'month'
-    SEASON = 'season'
-    BIANNUAL = 'bi-annual'
-    ANNUAL = 'annual'
-
-
-class StatusEnum(IntEnum):
-    ASSIGNING = 0
-    WAITTING = 1
-    PROCESSING = 2
-    REPORTING = 3
-    ALLOCATING = 4
-    CONFIRMING = 5
-    DONE = 98
-    ARCHIVED = 99
-    OVERTIME = -1
 
 
 class DataTypeEnum(Enum):
@@ -35,6 +14,11 @@ class DataTypeEnum(Enum):
     DATETIME = 'datetime'
 
 
+class TagCategoryEnum(Enum):
+    UTIL = 'util'
+    ORDER = 'order'
+
+
 class BaseModel(models.Model):
     # id = fields.CharField(pk=True, max_length=32, default=generate_random_id)
     id = fields.BigIntField(primary_key=True)
@@ -43,21 +27,6 @@ class BaseModel(models.Model):
 
     class Meta:
         abstract = True
-
-
-class PageMenu(BaseModel):
-    title = fields.CharField(max_length=32, null=False)
-    icon = fields.CharField(max_length=64, null=True)
-    url = fields.CharField(max_length=128, null=False)
-    parent = fields.BigIntField(null=True, db_index=True)
-    desc = fields.CharField(max_length=128, null=True)
-    sorts = fields.IntField(null=True, default=0)
-    hidden = fields.BooleanField(default=False)
-
-    class Meta:
-        table = 'tb_page_menu'
-        unique_together = ('parent', 'title')
-        ordering = ('-parent', '-sorts')
 
 
 class SystemParameter(BaseModel):
@@ -85,3 +54,19 @@ class SystemParameter(BaseModel):
                 return datetime.strptime(self.data, '%Y-%m-%d %H:%M:%S')
             case _:
                 return self.data
+
+
+class Tag(BaseModel):
+    """标签模型"""
+
+    name = fields.CharField(max_length=128, unique=True)
+    description = fields.CharField(max_length=512, null=True)
+    color = fields.CharField(max_length=32, null=True)  # 标签颜色
+    category = fields.CharEnumField(TagCategoryEnum, default=TagCategoryEnum.UTIL, db_index=True)  # 标签分类
+
+    class Meta:
+        table = 'tb_tag'
+        ordering = ('name',)
+
+    def __str__(self):
+        return self.name

@@ -18,7 +18,7 @@ class User(BaseModel):
     disabled = fields.BooleanField(default=False, db_index=True)
 
     class Meta:
-        table = 'tb_tu_user'
+        table = 'tb_user'
         ordering = ('nickname',)
 
     @property

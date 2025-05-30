@@ -34,13 +34,13 @@ REDIS_USER = config["redis"]["user"]
 REDIS_PASS = config["redis"]["password"]
 REDIS_DB = config["redis"]["db"]
 REDIS_URL = f"redis://{REDIS_USER}:{REDIS_PASS}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
-CACHE_HEADER = "pfev.cache."
+CACHE_HEADER = "tutil.cache."
 
 # HTTP settings
 HTTP_HOST = config["http"]["host"]
 HTTP_PORT = config["http"]["port"]
 HTTP_ADDR = f"http://{HTTP_HOST}:{HTTP_PORT}"
-DEFAULT_AVATAR_PATH = "static/avatar"
+DEFAULT_AVATAR_PATH = "server/static/avatar"
 
 # JWT and other settings
 ALGORITHM = config.get("ALGORITHM", "HS256")
@@ -64,9 +64,6 @@ TORTOISE_ORM = {
             "models": [
                 'module.common.models',
                 'module.user.models',
-                'module.project.models',
-                'module.permission.models',
-                'module.vetting.models',
                 'aerich.models',
             ],
             "default_connection": "default",
