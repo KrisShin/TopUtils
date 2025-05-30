@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from tortoise.contrib.fastapi import register_tortoise
 
-from config.settings import BASE_DIR, DEBUG, TORTOISE_ORM
+from server.config.settings import BASE_DIR, DEBUG, DEFAULT_AVATAR_PATH, TORTOISE_ORM
 
 
 def create_app():
@@ -16,7 +16,7 @@ def create_app():
 
     app.mount(
         "/static",
-        StaticFiles(directory=os.path.join(BASE_DIR, "statics")),
+        StaticFiles(directory=DEFAULT_AVATAR_PATH),
         name="static",
     )
     origins = [

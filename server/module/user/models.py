@@ -2,8 +2,8 @@ import os
 
 from tortoise import fields
 
-from config.settings import DEFAULT_AVATAR_PATH, HTTP_ADDR
-from module.common.models import BaseModel
+from server.config.settings import DEFAULT_AVATAR_PATH, HTTP_ADDR
+from server.module.common.models import BaseModel
 
 
 class User(BaseModel):

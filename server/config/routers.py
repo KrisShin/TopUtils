@@ -1,10 +1,10 @@
 from fastapi import FastAPI
 from tortoise import Tortoise
 
-from config.settings import DEBUG
-from module.common.apis import router as common_router
-from module.common.debug_apis import router as debug_router
-from module.user.apis import router as user_router
+from server.config.settings import DEBUG
+from server.module.common.apis import router as common_router
+from server.module.common.debug_apis import router as debug_router
+from server.module.user.apis import router as user_router
 
 
 def register_router(app: FastAPI):
@@ -14,11 +14,8 @@ def register_router(app: FastAPI):
 
     Tortoise.init_models(
         [
-            'module.common.models',
-            'module.user.models',
-            'module.project.models',
-            'module.permission.models',
-            'module.vetting.models',
+            'server.module.common.models',
+            'server.module.user.models',
         ],
         'models',
     )

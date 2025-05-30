@@ -1,4 +1,4 @@
-from config.settings import BASE_DIR
+from server.config.settings import BASE_DIR
 
 DEFALT_PASSWORD = 'ffffuck'
 DEBUG_PASSWORD = '49b4e29241ed58d8b6bc1d84bf7c8593'

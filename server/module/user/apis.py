@@ -6,16 +6,16 @@ from fastapi import APIRouter, Depends, Request, UploadFile
 from fastapi.security import OAuth2PasswordRequestForm
 from tortoise.expressions import Q
 
-from config.settings import ACCESS_TOKEN_EXPIRE_DAYS, DEBUG, DEV
-from module.common.accepts import SuccessResponse
-from module.common.constrants import AVATAR_STATIC_PATH, DEFALT_PASSWORD, DEBUG_PASSWORD
-from module.common.exceptions import BadRequest, NoPermission, TooManyRequest
-from module.common.global_variable import DataResponse
-from module.common.pydantics import UserOperation
-from module.common.redis_client import cache_client
-from module.common.utils import get_now_UTC_time
-from module.user.models import User
-from module.user.pydantics import (
+from server.config.settings import ACCESS_TOKEN_EXPIRE_DAYS, DEBUG, DEV
+from server.module.common.accepts import SuccessResponse
+from server.module.common.constrants import AVATAR_STATIC_PATH, DEFALT_PASSWORD, DEBUG_PASSWORD
+from server.module.common.exceptions import BadRequest, NoPermission, TooManyRequest
+from server.module.common.global_variable import DataResponse
+from server.module.common.pydantics import UserOperation
+from server.module.common.redis_client import cache_client
+from server.module.common.utils import get_now_UTC_time
+from server.module.user.models import User
+from server.module.user.pydantics import (
     TokenPydantic,
     UserCreatePydantic,
     UserDetailORMPydantic,
@@ -26,7 +26,7 @@ from module.user.pydantics import (
     UserPydantic,
     UserResetPasswordPydantic,
 )
-from module.user.utils import create_access_token, current_user, get_password_hash, verify_password
+from server.module.user.utils import create_access_token, current_user, get_password_hash, verify_password
 
 router = APIRouter()
 

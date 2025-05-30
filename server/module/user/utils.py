@@ -5,12 +5,12 @@ from fastapi import Depends, Request
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
-from config.settings import ACCESS_TOKEN_EXPIRE_DAYS, ALGORITHM, DEBUG, SECRET_KEY
-from module.common.exceptions import AuthorizationFailed
-from module.common.global_variable import oauth2_scheme
-from module.common.redis_client import cache_client
-from module.common.utils import get_now_UTC_time
-from module.user.models import User
+from server.config.settings import ACCESS_TOKEN_EXPIRE_DAYS, ALGORITHM, DEBUG, SECRET_KEY
+from server.module.common.exceptions import AuthorizationFailed
+from server.module.common.global_variable import oauth2_scheme
+from server.module.common.redis_client import cache_client
+from server.module.common.utils import get_now_UTC_time
+from server.module.user.models import User
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 

@@ -1,10 +1,9 @@
 import time
 from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
-from config.settings import DEBUG, DEV
-from module.common.constrants import ROLE_ADMIN
-from module.common.global_variable import access_logger, error_logger
-from module.user.utils import validate_token
+from server.config.settings import DEBUG, DEV
+from server.module.common.global_variable import access_logger, error_logger
+from server.module.user.utils import validate_token
 
 
 class LogMiddleware(BaseHTTPMiddleware):
@@ -19,7 +18,6 @@ class LogMiddleware(BaseHTTPMiddleware):
         try:
             user = await validate_token(token.split()[-1])
             username = user['username']
-            role = 'admin' if user['role'] == ROLE_ADMIN else 'user'
         except Exception:
             # from traceback import print_exc
             # print_exc()

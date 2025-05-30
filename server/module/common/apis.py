@@ -2,13 +2,13 @@ import json
 
 from fastapi import APIRouter, Depends
 
-from module.common.accepts import CreatedResponse, SuccessResponse
-from module.common.exceptions import BadRequest
-from module.common.global_variable import DataResponse
-from module.common.models import DataTypeEnum, SystemParameter
-from module.common.pydantics import SystemParameterCreatePydantic, SystemParameterUpdatePydantic
-from module.user.models import User
-from module.user.utils import current_user
+from server.module.common.accepts import CreatedResponse, SuccessResponse
+from server.module.common.exceptions import BadRequest
+from server.module.common.global_variable import DataResponse
+from server.module.common.models import DataTypeEnum, SystemParameter
+from server.module.common.pydantics import SystemParameterCreatePydantic, SystemParameterUpdatePydantic
+from server.module.user.models import User
+from server.module.user.utils import current_user
 
 router = APIRouter()
 

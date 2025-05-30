@@ -2,7 +2,7 @@ from typing import Any
 
 from fastapi import status
 
-from module.common.global_variable import BaseResponse
+from server.module.common.global_variable import BaseResponse
 
 
 class SuccessResponse(BaseResponse):

@@ -3,8 +3,8 @@ from datetime import timedelta
 
 from redis import asyncio
 
-from config.settings import CACHE_HEADER, REDIS_URL
-from module.common.pydantics import UserOperation
+from server.config.settings import CACHE_HEADER, REDIS_URL
+from server.module.common.pydantics import UserOperation
 
 
 class RedisCache:

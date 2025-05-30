@@ -1,18 +1,65 @@
+from datetime import timedelta
+from enum import IntEnum
 from tortoise import fields
+from tortoise.contrib.pydantic import pydantic_model_creator
 
 from server.module.common.models import BaseModel
-from server.module.common.utils import get_uuid4_id
+from server.module.common.utils import get_now_UTC_time, get_uuid4_id
+
+
+class OrderStatus(IntEnum):
+    """订单状态"""
+
+    TRY = 0  # 试用
+    SUBSCRIBE = 1  # 订阅
 
 
 class Order(BaseModel):
-    """订单模型"""
+    """订单模型（优化后）"""
 
-    id = fields.CharField(max_length=32, default=get_uuid4_id, primary_key=True)  # 工具代码
+    id = fields.CharField(max_length=32, default=get_uuid4_id, primary_key=True)
     tool = fields.ForeignKeyField("module.tool.models.Tool", related_name="orders", on_delete=fields.CASCADE)
-    access_key = fields.CharField(max_length=64, null=True, default=get_uuid4_id)  # 访问密钥
-    secret_key = fields.CharField(max_length=64, null=True, default=get_uuid4_id)  # 密钥
-    expire_time = fields.DatetimeField(null=True)  # 过期时间
-    user_info = fields.JSONField(null=False)  # 用户信息
-    user_info_hashed = fields.CharField(max_length=512, null=True)  # 哈希后的用户信息
-    request_ip = fields.CharField(max_length=32, null=True)  # 请求IP
-    last_request_time = fields.DatetimeField(auto_now_add=True)  # 请求时间
+    email = fields.CharField(max_length=255, unique=True, index=True)  # 用户唯一标识
+
+    # 订阅信息
+    expire_time = fields.DatetimeField(null=True)  # 订阅过期时间
+    paid_status = fields.IntEnumField(OrderStatus, default=OrderStatus.TRY)  # 0=未支付, 1=已支付
+
+    # TOTP (身份验证器) 相关字段
+    totp_secret = fields.CharField(max_length=32, null=True)  # 加密存储的 TOTP 密钥
+    is_totp_enabled = fields.BooleanField(default=False)  # TOTP 是否已验证并启用
+
+    # 设备绑定相关字段
+    device_info_hashed = fields.CharField(max_length=512, null=True)  # 当前绑定的设备哈希
+    last_rebind_time = fields.DatetimeField(null=True)  # 上次换绑时间，用于冷却控制
+
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    # 检查订阅是否有效
+    @property
+    def is_active(self) -> bool:
+        if not self.paid_status:
+            return False
+        if self.expire_time and self.expire_time < get_now_UTC_time():
+            return False
+        return True
+
+    # 检查换绑是否在冷却期
+    @property
+    def is_rebind_in_cooldown(self) -> bool:
+        if not self.last_rebind_time:
+            return False
+        # 冷却时间设为24小时
+        return self.last_rebind_time + timedelta(hours=24) > get_now_UTC_time()
+
+    class Meta:
+        table = "tb_order_auth"
+        ordering = ('-last_request_time',)
+        # 强制约束：一个工具在一个机器上只能有一个订单
+        unique_together = (("tool", "user_info_hashed"),)
+
+    def __str__(self):
+        return f"Order(id={self.id}, tool={self.tool.name}, status={self.paid_status.name})"
+
+# 创建 Pydantic 模型用于 API 输出
+Order_Pydantic = pydantic_model_creator(Order)

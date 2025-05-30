@@ -5,7 +5,7 @@ from typing import Optional
 from pydantic import BaseModel
 from tortoise.contrib.pydantic import pydantic_model_creator
 
-from module.common.models import DataTypeEnum, PageMenu
+from server.module.common.models import DataTypeEnum
 
 
 class _OptionType:
@@ -27,9 +27,6 @@ class UserOperation(Enum):
     EDIT_AVATAR: _OptionType = _OptionType(4, 1, 30 * 60)
     # ADD_CONTACT: _OptionType = _OptionType(5, 50, 60 * 60 * 24)
     # SEND_MESSAGE: _OptionType = _OptionType(6, 100, 5 * 60)
-
-
-PageMenuPydantic = pydantic_model_creator(PageMenu, name='PageMenuPydantic')
 
 
 class SystemParameterCreatePydantic(BaseModel):

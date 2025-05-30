@@ -4,9 +4,9 @@ from typing import Optional
 from pydantic import BaseModel, field_serializer, model_validator
 from tortoise.contrib.pydantic import pydantic_model_creator
 
-from module.common.constrants import DEFALT_PASSWORD
-from module.user.models import User
-from module.user.utils import get_password_hash
+from server.module.common.constrants import DEFALT_PASSWORD
+from server.module.user.models import User
+from server.module.user.utils import get_password_hash
 
 UserInfoORMPydantic = pydantic_model_creator(User, name='UserInfoORMPydantic', include=('id', 'nickname', 'phone', 'email', 'role', 'post'))
 UserDetailORMPydantic = pydantic_model_creator(User, name='UserDetailORMPydantic', exclude=('password', 'last_login_ip', 'last_login_time'))

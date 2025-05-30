@@ -4,6 +4,9 @@ import yaml
 # Set the project base directory
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+STATIC_PATH = BASE_DIR / "server" / "statics"
+DEFAULT_AVATAR_PATH = STATIC_PATH / "avatar"
+
 # Load YAML configuration
 with open(BASE_DIR / "config.yaml", "r") as f:
     config = yaml.safe_load(f)
@@ -40,7 +43,7 @@ CACHE_HEADER = "tutil.cache."
 HTTP_HOST = config["http"]["host"]
 HTTP_PORT = config["http"]["port"]
 HTTP_ADDR = f"http://{HTTP_HOST}:{HTTP_PORT}"
-DEFAULT_AVATAR_PATH = "server/static/avatar"
+
 
 # JWT and other settings
 ALGORITHM = config.get("ALGORITHM", "HS256")
@@ -62,8 +65,8 @@ TORTOISE_ORM = {
     "apps": {
         "models": {
             "models": [
-                'module.common.models',
-                'module.user.models',
+                'server.module.common.models',
+                'server.module.user.models',
                 'aerich.models',
             ],
             "default_connection": "default",

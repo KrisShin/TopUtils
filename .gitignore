@@ -17,3 +17,10 @@ dist/
 
 # config file
 config.yaml
+
+# ide files
+.idea/
+.vscode/
+
+# macOS files
+.DS_Store
