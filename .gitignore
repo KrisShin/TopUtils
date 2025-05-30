@@ -1,0 +1,19 @@
+# python cache
+__pycache__/
+# bytecode files
+**/*.py[cod]
+# distribution / packaging
+.Python
+
+# website files
+build/
+dist/
+
+# virtual environments
+**/env/
+**/.env/
+**/venv/
+**/.venv/
+
+# config file
+config.yaml

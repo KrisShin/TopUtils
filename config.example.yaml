@@ -1,0 +1,27 @@
+# config.yml
+
+DEV: False
+DEBUG: False
+
+SECRET_KEY: "secret"
+
+database:
+  host: "localhost"
+  port: 1
+  user: "1"
+  password: "1"
+  name: "1"
+
+redis:
+  host: "localhost"
+  port: 1
+  user: "1"
+  password: "1"
+  db: 1
+
+http:
+  host: "localhost"
+  port: 1
+
+ALGORITHM: "HS256"
+ACCESS_TOKEN_EXPIRE_DAYS: 1
