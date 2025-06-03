@@ -176,14 +176,26 @@ class ApiClient:
             console.print(f"[bold red]错误: {e.response.json()['detail']}[/]")
             return None
 
-    def login(self, order_id: str, code: str):
+    def login(self, order_id: str, code: str, check_method: str = "1"):
         try:
+            # 使用身份验证器App
             response = httpx.post(
-                f"{self.base_url}/order/auth/login", json={"order_id": order_id, "code": code, "device_hash": self.device_hash}
+                f"{self.base_url}/order/auth/login",
+                json={"order_id": order_id, "code": code, "device_hash": self.device_hash, "check_method": int(check_method)},
             )
-            return response
+            return response.json()
         except httpx.HTTPStatusError as e:
             console.print(f"[bold red]错误: 无法连接到服务器。 {e}[/]")
+            return None
+
+    def send_email_code(self, email: str):
+        """发送邮箱验证码"""
+        try:
+            response = httpx.post(f"{self.base_url}/auth/send-email-code", json={"email": email, "tool_code": self.tool_code})
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            console.print(f"[bold red]错误: {e.response.json()['detail']}[/]")
             return None
 
     def rebind(self, email: str, code: str):
@@ -326,10 +338,18 @@ def main():
 
     # --- 循环登录验证 ---
     while True:
-        console.print("\n[bold]请输入授权码以继续...[/]")
+        check_method = Prompt.ask(
+            "请选择验证方式: \n[bold green]1. 使用身份验证器App[/] \n2. 使用邮箱动态验证码",
+            choices=["1", "2"],
+            default="1",
+            show_choices=False,
+        )
+        if check_method == "2":
+            api.send_email_code(decode_token['email'])
+
         code = Prompt.ask("请输入您身份验证器App上的6位数字码")
 
-        response = api.login(decode_token['order_id'], code)
+        response = api.login(decode_token['order_id'], code, check_method)
 
         if not response:
             # API客户端内部已打印错误，直接重试

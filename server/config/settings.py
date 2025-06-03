@@ -44,6 +44,15 @@ HTTP_HOST = config["http"]["host"]
 HTTP_PORT = config["http"]["port"]
 HTTP_ADDR = f"http://{HTTP_HOST}:{HTTP_PORT}"
 
+# Mail settings
+MAIL_SECRET = config["yeah_mail"]["secret"]
+MAIL_FROM = config["yeah_mail"]["from"]
+MAIL_FROMNAME = config["yeah_mail"].get("from_name", "Top Utils Support")
+MAIL_PORT = config["yeah_mail"]["port"]
+MAIL_SERVER = config["yeah_mail"]["server"]
+MAIL_STARTTLS = config["yeah_mail"].get("starttls", False)
+MAIL_SSL_TLS = config["yeah_mail"].get("ssl_tls", True)
+
 
 # JWT and other settings
 ALGORITHM = config.get("ALGORITHM", "HS256")

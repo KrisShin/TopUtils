@@ -1,8 +1,12 @@
+from datetime import timedelta
+import random
+import string
 from fastapi import APIRouter
 import pyotp
 from jose import jwt
 
 from server.config.settings import ALGORITHM
+from server.module.common.email_utils import send_email
 from server.module.common.exceptions import AuthorizationFailed, BadRequest, NoPermission, TooManyRequest
 from server.module.common.global_variable import BaseResponse, DataResponse
 from server.module.common.utils import get_now_UTC_time
@@ -80,8 +84,14 @@ async def software_login(request: AuthRequest):
     if not order.is_active:
         raise BadRequest("订阅已过期或无效")
 
-    if not verify_totp_code(order.totp_secret, request.code):
-        raise BadRequest("验证码错误")
+    if request.check_method == 1:
+        if not verify_totp_code(order.totp_secret, request.code):
+            raise BadRequest("验证码错误或失效")
+    elif request.check_method == 2:
+        if order.email_verify_code != request.code or order.email_verify_expire < get_now_UTC_time():
+            raise BadRequest("验证码错误或失效")
+        order.email_verify_code = None  # 验证成功后清除验证码
+        order.email_verify_expire = None
 
     # 检查设备哈希是否匹配
     if order.device_info_hashed != request.device_hash:
@@ -96,6 +106,31 @@ async def software_login(request: AuthRequest):
     }
     encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id, order.email)), algorithm=ALGORITHM)
     return DataResponse(data={'token': encoded_jwt})
+
+
+@router.post("/auth/send-email-code", summary="发送邮箱验证码接口")
+async def send_email_code(request: OrderIdRequest):
+    """
+    发送邮箱验证码，用于验证用户身份。
+    """
+    order = await Order.get_or_none(id=request.order_id)
+    if not order:
+        raise BadRequest("订单不存在")
+
+    if not order.is_totp_enabled:
+        raise BadRequest("请先绑定身份验证器")
+
+    if not order.is_active:
+        raise BadRequest("订阅已过期或无效")
+
+    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))  # 生成6位随机大写字母验证码
+    order.email_verify_code = code
+    order.email_verify_expire = get_now_UTC_time() + timedelta(minutes=5)  # 验证码有效期为5分钟
+    await order.save()
+
+    await send_email(order.email, "Top Utils 验证码", f"您的验证码是：{code}，请在5分钟内使用。")
+
+    return BaseResponse("验证码已发送，请查收您的邮箱。")
 
 
 @router.post("/auth/rebind", summary="设备换绑接口")
