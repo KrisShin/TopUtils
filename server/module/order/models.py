@@ -19,11 +19,11 @@ class Order(BaseModel):
 
     id = fields.CharField(max_length=32, default=get_uuid4_id, primary_key=True)
     tool = fields.ForeignKeyField("models.Tool", related_name="orders", on_delete=fields.CASCADE)
-    email = fields.CharField(max_length=255, unique=True, index=True)  # 用户唯一标识
+    email = fields.CharField(max_length=255, index=True, null=True)  # 用户唯一标识
 
     # 订阅信息
     expire_time = fields.DatetimeField(null=True)  # 订阅过期时间
-    paid_status = fields.IntEnumField(OrderStatus, default=OrderStatus.TRY)  # 0=未支付, 1=已支付
+    paid_status = fields.IntEnumField(OrderStatus, default=OrderStatus.TRY)
 
     # TOTP (身份验证器) 相关字段
     totp_secret = fields.CharField(max_length=32, null=True)  # 加密存储的 TOTP 密钥
@@ -33,13 +33,14 @@ class Order(BaseModel):
     device_info_hashed = fields.CharField(max_length=512, null=True)  # 当前绑定的设备哈希
     last_rebind_time = fields.DatetimeField(null=True)  # 上次换绑时间，用于冷却控制
 
+    email_verify_code = fields.CharField(max_length=6, null=True)  # 邮箱验证码
+    email_verify_expire = fields.DatetimeField(null=True)  # 邮箱验证码过期时间
+
     created_at = fields.DatetimeField(auto_now_add=True)
 
     # 检查订阅是否有效
     @property
     def is_active(self) -> bool:
-        if not self.paid_status:
-            return False
         if self.expire_time and self.expire_time < get_now_UTC_time():
             return False
         return True
@@ -54,12 +55,12 @@ class Order(BaseModel):
 
     class Meta:
         table = "tb_order"
-        ordering = ('-last_request_time',)
         # 强制约束：一个工具在一个机器上只能有一个订单
-        unique_together = (("tool", "device_info_hashed"),)
+        unique_together = (("tool", "device_info_hashed"), ("tool", "email"))
 
     def __str__(self):
         return f"Order(id={self.id}, tool={self.tool.name}, status={self.paid_status.name})"
+
 
 # 创建 Pydantic 模型用于 API 输出
 Order_Pydantic = pydantic_model_creator(Order)

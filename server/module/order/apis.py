@@ -1,47 +1,42 @@
-import io
 from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
 import pyotp
-import qrcode
+from jose import jwt
 
+from server.config.settings import ALGORITHM
 from server.module.common.exceptions import AuthorizationFailed, BadRequest, NoPermission, TooManyRequest
-from server.module.common.global_variable import BaseResponse
+from server.module.common.global_variable import BaseResponse, DataResponse
 from server.module.common.utils import get_now_UTC_time
-from server.module.order.schemas import AuthRequest, EmailRequest, RebindRequest, TOTPConfirmRequest
-from server.module.order.utils import get_order_by_email, verify_totp_code
+from server.module.order.models import Order
+from server.module.order.schemas import (
+    AuthRequest,
+    OrderIdRequest,
+    RebindRequest,
+    TOTPConfirmRequest,
+    TOTPSetupResponse,
+    ToolDeviceBindRequest,
+)
+from server.module.order.utils import verify_totp_code
 
 router = APIRouter()
 
 
-@router.post("/auth/setup-totp", summary="第一步：为用户设置TOTP")
-async def setup_totp(request: EmailRequest):
+@router.post("/auth/setup-totp", response_model=TOTPSetupResponse, summary="第一步：为用户请求TOTP设置信息")  # 使用新的响应模型
+async def setup_totp(request: OrderIdRequest):
     """
-    为指定邮箱生成一个新的TOTP密钥和对应的二维码。
-    用户需要扫描这个二维码来绑定他们的身份验证器应用。
+    为指定邮箱生成一个新的TOTP密钥，并返回用于生成二维码的URI。
+    客户端收到URI后，自行生成二维码。
     """
-    order = await get_order_by_email(request.email)
+    order = await Order.get_or_none(id=request.order_id).prefetch_related("tool")
 
-    # 如果已启用，需要先走解绑流程（此处简化，直接重新生成）
-    # if order.is_totp_enabled:
-    #     raise HTTPException(status_code=400, detail="TOTP is already enabled.")
-
-    # 生成一个32位的Base32密钥
     secret = pyotp.random_base32()
     order.totp_secret = secret
-    order.is_totp_enabled = False  # 等待用户验证后才正式启用
+    order.is_totp_enabled = False
     await order.save()
 
-    # 生成URI，格式为：otpauth://totp/YourAppName:user@email.com?secret=...&issuer=YourAppName
-    uri = pyotp.totp.TOTP(secret).provisioning_uri(name=order.email, issuer_name="您的软件名称")
+    uri = pyotp.totp.TOTP(secret).provisioning_uri(name=order.email, issuer_name=order.tool.name)
 
-    # 使用qrcode库生成二维码图片
-    img = qrcode.make(uri)
-    buf = io.BytesIO()
-    img.save(buf, "PNG")
-    buf.seek(0)
-
-    # 以图片流的形式返回二维码
-    return StreamingResponse(buf, media_type="image/png")
+    # 返回包含URI的JSON响应
+    return TOTPSetupResponse(uri=uri)
 
 
 @router.post("/auth/confirm-totp", summary="第二步：验证并启用TOTP")
@@ -49,7 +44,7 @@ async def confirm_totp(request: TOTPConfirmRequest):
     """
     用户输入从验证器App上看到的第一个动态码，以完成绑定。
     """
-    order = await get_order_by_email(request.email)
+    order = await Order.get_or_none(id=request.order_id)
 
     if not order.totp_secret:
         raise BadRequest("请先调用 setup-totp 接口")
@@ -59,16 +54,17 @@ async def confirm_totp(request: TOTPConfirmRequest):
 
     order.is_totp_enabled = True
 
-    # 首次绑定时，将当前设备哈希也记录下来
-    # 在实际应用中，这个哈希应该在调用此接口时由客户端传来
-    # 此处为演示，我们先置空
-    if not order.device_info_hashed:
-        # 提示用户下一步需要登录来绑定第一个设备
-        pass
-
     await order.save()
 
-    return BaseResponse("身份验证器绑定成功！")
+    token_dict = {
+        'tool_code': order.tool_id,
+        'device_hash': order.device_info_hashed,
+        'order_id': order.id,
+        'email': order.email,
+        'expire_time': order.expire_time,
+    }
+    encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id)), algorithm=ALGORITHM)
+    return DataResponse(data={'token': encoded_jwt})
 
 
 @router.post("/auth/login", summary="软件客户端登录接口")
@@ -76,7 +72,7 @@ async def software_login(request: AuthRequest):
     """
     软件每次启动时调用此接口进行验证。
     """
-    order = await get_order_by_email(request.email)
+    order = await Order.get_or_none(email=request.email)
 
     if not order.is_totp_enabled:
         raise NoPermission("请先绑定身份验证器")
@@ -100,12 +96,14 @@ async def software_login(request: AuthRequest):
     return BaseResponse()
 
 
-@router.post("/auth/rebind", response_model=BaseResponse, summary="设备换绑接口")
+@router.post("/auth/rebind", summary="设备换绑接口")
 async def rebind_device(request: RebindRequest):
     """
     当用户在已绑定设备之外的电脑上登录时，调用此接口进行换绑。
     """
-    order = await get_order_by_email(request.email)
+    order = await Order.get_or_none(email=request.email)
+    if not order:
+        raise BadRequest("用户或订单不存在")
 
     if not order.is_totp_enabled or not order.is_active:
         raise NoPermission("账户状态异常")
@@ -123,3 +121,40 @@ async def rebind_device(request: RebindRequest):
     await order.save()
 
     return BaseResponse("设备换绑成功！")
+
+
+@router.post("/bind", summary="设备工具绑定接口")
+async def bind_device(request: ToolDeviceBindRequest):
+    """
+    当用户在已绑定设备之外的电脑上登录时，调用此接口进行换绑。
+    """
+    order = await Order.get_or_none(device_info_hashed=request.device_hash, tool_id=request.tool_code)
+    if order:
+        if not order.is_active:
+            raise BadRequest("试用期已结束或订阅过期, 请先续费")
+    else:
+        order = await Order.create(device_info_hashed=request.device_hash, tool_id=request.tool_code)
+
+    return DataResponse(data={'order_id': order.id})
+
+
+@router.post("/is-valid", summary="设备工具绑定接口")
+async def is_valid(request: OrderIdRequest):
+    """
+    当用户在已绑定设备之外的电脑上登录时，调用此接口进行换绑。
+    """
+    order = await Order.get_or_none(id=request.order_id)
+    if not order:
+        raise BadRequest("订单不存在")
+    if order.is_active:
+        token_dict = {
+            'tool_code': order.tool_id,
+            'device_hash': order.device_info_hashed,
+            'order_id': order.id,
+            'email': order.email,
+            'expire_time': order.expire_time,
+        }
+        encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id)), algorithm=ALGORITHM)
+        return DataResponse(data={'token': encoded_jwt})
+    else:
+        raise BadRequest("试用期已结束或订阅过期, 请先续费")

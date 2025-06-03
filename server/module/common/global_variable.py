@@ -73,8 +73,8 @@ class BaseResponse(Response):
 
     def __init__(
         self,
-        code: int = status.HTTP_200_OK,
         message: str = 'success',
+        code: int = status.HTTP_200_OK,
         data: Any = None,
     ) -> None:
         self.message = message

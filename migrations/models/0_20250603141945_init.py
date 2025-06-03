@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS "tb_tool" (
     "name" VARCHAR(128) NOT NULL UNIQUE,
     "description" VARCHAR(512),
     "context" TEXT,
-    "pics" JSONB NOT NULL,
+    "pics" JSONB,
     "link" VARCHAR(256),
     "passwd" VARCHAR(64),
     "create_time" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS "tb_order" (
     "id" VARCHAR(32) NOT NULL PRIMARY KEY,
     "create_time" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "update_time" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "email" VARCHAR(255) NOT NULL UNIQUE,
+    "email" VARCHAR(255),
     "expire_time" TIMESTAMPTZ,
     "paid_status" SMALLINT NOT NULL DEFAULT 0,
     "totp_secret" VARCHAR(32),
@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS "tb_order" (
     "last_rebind_time" TIMESTAMPTZ,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "tool_id" VARCHAR(32) NOT NULL REFERENCES "tb_tool" ("code") ON DELETE CASCADE,
-    CONSTRAINT "uid_tb_order_tool_id_3ec9fe" UNIQUE ("tool_id", "device_info_hashed")
+    CONSTRAINT "uid_tb_order_tool_id_3ec9fe" UNIQUE ("tool_id", "device_info_hashed"),
+    CONSTRAINT "uid_tb_order_tool_id_490afe" UNIQUE ("tool_id", "email")
 );
 CREATE INDEX IF NOT EXISTS "idx_tb_order_email_01c3ed" ON "tb_order" ("email");
 COMMENT ON COLUMN "tb_order"."paid_status" IS 'TRY: 0\nSUBSCRIBE: 1';
