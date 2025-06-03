@@ -166,18 +166,21 @@ class ApiClient:
             console.print(f"[bold red]错误: 无法连接到服务器或服务器返回错误。 {e.response.json() if e.response else e}[/]")
             return None
 
-    def confirm_totp(self, order_id: str, code: str):
+    def confirm_totp(self, order_id: str, email: str, code: str):
         try:
-            response = httpx.post(f"{self.base_url}/order/auth/confirm-totp", json={"order_id": order_id, "code": code})
+            console.print({"order_id": order_id, "email": email, "code": code})
+            response = httpx.post(f"{self.base_url}/order/auth/confirm-totp", json={"order_id": order_id, "email": email, "code": code})
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
             console.print(f"[bold red]错误: {e.response.json()['detail']}[/]")
             return None
 
-    def login(self, email: str, code: str):
+    def login(self, order_id: str, code: str):
         try:
-            response = httpx.post(f"{self.base_url}/auth/login", json={"email": email, "code": code, "device_hash": self.device_hash})
+            response = httpx.post(
+                f"{self.base_url}/order/auth/login", json={"order_id": order_id, "code": code, "device_hash": self.device_hash}
+            )
             return response
         except httpx.HTTPStatusError as e:
             console.print(f"[bold red]错误: 无法连接到服务器。 {e}[/]")
@@ -261,7 +264,7 @@ def handle_totp_setup(api: ApiClient, decode_token: dict) -> bool:
 
         while True:
             code = Prompt.ask("请输入您验证器App上显示的6位数字码")
-            result = api.confirm_totp(decode_token['order_id'], code)
+            result = api.confirm_totp(decode_token['order_id'], decode_token['email'], code)
             if result:
                 console.print(f"[bold green]{result['message']}[/]")
                 return True
@@ -311,36 +314,22 @@ def main():
         if not handle_totp_setup(api, decode_token):
             return  # TOTP设置失败或取消，退出程序
 
-    # 将所有提示文字合并到一个变量中
-    prompt_text = "检测到首次运行，请选择操作\n" "[bold green][1][/] 开始试用 (1分钟)\n" "[bold blue][2][/] 我已购买/已有账户"
+        # 【修改在这里】合并为一个 prompt 参数，并移除重复的关键字参数
+        choice = Prompt.ask("检测到首次运行[bold green]按任意键开始试用 (1分钟)[/]\n")
 
-    # 【修改在这里】合并为一个 prompt 参数，并移除重复的关键字参数
-    choice = Prompt.ask(
-        prompt_text,
-        choices=["1", "2"],
-        default="1",
-        console=console,
-        show_choices=False,  # 因为我们已经在提示中手动写了[1][2]，所以关闭自动显示
-    )
-
-    if choice == "1":
-        run_trial_mode()
-        # 试用结束后，强制进入登录流程
-        email = Prompt.ask("请输入您的邮箱以用于后续登录")
-        config = {"email": email, "totp_setup_complete": False}
-    else:
-        email = Prompt.ask("请输入您购买时使用的邮箱")
-        config = {"email": email, "totp_setup_complete": False}
+        if choice == "1":
+            run_trial_mode()
+            # 试用结束后，强制进入登录流程
 
     # --- 主授权流程 ---
-    console.print(f"\n你好, [bold cyan]{config['email']}[/]。正在准备授权...")
+    console.print(f"\n你好, [bold cyan]{decode_token['email']}[/]。正在准备授权...")
 
     # --- 循环登录验证 ---
     while True:
         console.print("\n[bold]请输入授权码以继续...[/]")
         code = Prompt.ask("请输入您身份验证器App上的6位数字码")
 
-        response = api.login(config['email'], code)
+        response = api.login(decode_token['order_id'], code)
 
         if not response:
             # API客户端内部已打印错误，直接重试
@@ -350,14 +339,16 @@ def main():
             run_main_app_logic()
             break  # 登录成功，退出循环
         elif response.status_code == 403:  # 设备不匹配
-            if handle_rebind(api, config['email']):
-                # 换绑成功后，直接进入主程序
-                run_main_app_logic()
-                break
-            else:
-                # 换绑失败或取消
-                console.print("授权失败，程序退出。")
-                break
+            # console.print(f"设备不匹配, 请重新绑定授权")
+            # if handle_rebind(api, email):
+            #     # 换绑成功后，直接进入主程序
+            #     run_main_app_logic()
+            #     break
+            # else:
+            #     # 换绑失败或取消
+            #     console.print("授权失败，程序退出。")
+            #     break
+            ...
         else:
             # 其他错误，例如动态码错误(401)
             console.print(f"[bold red]登录失败: {response.json()['detail']}[/]")

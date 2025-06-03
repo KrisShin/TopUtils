@@ -10,7 +10,14 @@ class OrderIdRequest(BaseModel):
     order_id: str
 
 
-class TOTPConfirmRequest(OrderIdRequest):
+class OrderEmailRequest(EmailRequest, OrderIdRequest): ...
+
+
+class CodeRequest(BaseModel):
+    code: str = Field(..., min_length=6, max_length=6, description="6位验证码")
+
+
+class TOTPConfirmRequest(OrderIdRequest, EmailRequest):
     code: str = Field(..., min_length=6, max_length=6, description="6位TOTP动态码")
 
 
@@ -25,7 +32,7 @@ class ToolIdRequest(BaseModel):
 class ToolDeviceBindRequest(ToolIdRequest, DeviceHashRequest): ...
 
 
-class AuthRequest(TOTPConfirmRequest, DeviceHashRequest): ...
+class AuthRequest(OrderIdRequest, CodeRequest, DeviceHashRequest): ...
 
 
 class RebindRequest(TOTPConfirmRequest):

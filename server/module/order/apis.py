@@ -51,7 +51,7 @@ async def confirm_totp(request: TOTPConfirmRequest):
 
     if not verify_totp_code(order.totp_secret, request.code):
         raise BadRequest("动态码错误")
-
+    order.email = request.email
     order.is_totp_enabled = True
 
     await order.save()
@@ -72,28 +72,30 @@ async def software_login(request: AuthRequest):
     """
     软件每次启动时调用此接口进行验证。
     """
-    order = await Order.get_or_none(email=request.email)
+    order = await Order.get_or_none(id=request.order_id)
 
     if not order.is_totp_enabled:
-        raise NoPermission("请先绑定身份验证器")
+        raise BadRequest("请先绑定身份验证器")
 
     if not order.is_active:
-        raise NoPermission("订阅已过期或无效")
+        raise BadRequest("订阅已过期或无效")
 
     if not verify_totp_code(order.totp_secret, request.code):
-        raise NoPermission("动态码错误")
-
-    # 如果是首次登录，或者数据库中没有设备信息，则将当前设备绑定
-    if not order.device_info_hashed:
-        order.device_info_hashed = request.device_hash
-        await order.save()
-        return BaseResponse("首次登录成功，设备已绑定！")
+        raise BadRequest("验证码错误")
 
     # 检查设备哈希是否匹配
     if order.device_info_hashed != request.device_hash:
         raise NoPermission("设备不匹配，如果更换了设备，请使用换绑接口。")
 
-    return BaseResponse()
+    token_dict = {
+        'tool_code': order.tool_id,
+        'device_hash': order.device_info_hashed,
+        'order_id': order.id,
+        'email': order.email,
+        'expire_time': order.expire_time,
+    }
+    encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id, order.email)), algorithm=ALGORITHM)
+    return DataResponse(data={'token': encoded_jwt})
 
 
 @router.post("/auth/rebind", summary="设备换绑接口")
