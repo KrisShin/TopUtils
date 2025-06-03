@@ -18,7 +18,7 @@ class Order(BaseModel):
     """订单模型（优化后）"""
 
     id = fields.CharField(max_length=32, default=get_uuid4_id, primary_key=True)
-    tool = fields.ForeignKeyField("module.tool.models.Tool", related_name="orders", on_delete=fields.CASCADE)
+    tool = fields.ForeignKeyField("models.Tool", related_name="orders", on_delete=fields.CASCADE)
     email = fields.CharField(max_length=255, unique=True, index=True)  # 用户唯一标识
 
     # 订阅信息
@@ -53,10 +53,10 @@ class Order(BaseModel):
         return self.last_rebind_time + timedelta(hours=24) > get_now_UTC_time()
 
     class Meta:
-        table = "tb_order_auth"
+        table = "tb_order"
         ordering = ('-last_request_time',)
         # 强制约束：一个工具在一个机器上只能有一个订单
-        unique_together = (("tool", "user_info_hashed"),)
+        unique_together = (("tool", "device_info_hashed"),)
 
     def __str__(self):
         return f"Order(id={self.id}, tool={self.tool.name}, status={self.paid_status.name})"

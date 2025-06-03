@@ -5,6 +5,7 @@ from server.config.settings import DEBUG
 from server.module.common.apis import router as common_router
 from server.module.common.debug_apis import router as debug_router
 from server.module.user.apis import router as user_router
+from server.module.order.apis import router as order_router
 
 
 def register_router(app: FastAPI):
@@ -16,6 +17,8 @@ def register_router(app: FastAPI):
         [
             'server.module.common.models',
             'server.module.user.models',
+            'server.module.order.models',
+            'server.module.tool.models',
         ],
         'models',
     )
@@ -38,4 +41,10 @@ def register_router(app: FastAPI):
         tags=['user'],
         responses={404: {'description': 'Not Found'}},
         prefix='/api/user',
+    )
+    app.include_router(
+        order_router,
+        tags=['order'],
+        responses={404: {'description': 'Not Found'}},
+        prefix='/api/order',
     )

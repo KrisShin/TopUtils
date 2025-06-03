@@ -15,7 +15,7 @@ from server.module.common.pydantics import UserOperation
 from server.module.common.redis_client import cache_client
 from server.module.common.utils import get_now_UTC_time
 from server.module.user.models import User
-from server.module.user.pydantics import (
+from server.module.user.schemas import (
     TokenPydantic,
     UserCreatePydantic,
     UserDetailORMPydantic,
@@ -108,7 +108,8 @@ async def get_user_list(query: Optional[str] = None, me: User = Depends(current_
 
 
 @router.post('/create/')
-async def post_create_user(user: UserCreatePydantic, me: User = Depends(current_user)):
+# async def post_create_user(user: UserCreatePydantic, me: User = Depends(current_user)):
+async def post_create_user(user: UserCreatePydantic):
     """admin and system admin can create user"""
     user = await User.create(**user.model_dump())
     return SuccessResponse()

@@ -67,6 +67,8 @@ TORTOISE_ORM = {
             "models": [
                 'server.module.common.models',
                 'server.module.user.models',
+                'server.module.tool.models',
+                'server.module.order.models',
                 'aerich.models',
             ],
             "default_connection": "default",
