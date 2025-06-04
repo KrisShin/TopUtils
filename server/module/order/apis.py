@@ -59,7 +59,7 @@ async def confirm_totp(request: TOTPConfirmRequest):
     order.is_totp_enabled = True
 
     await order.save()
-    send_email(order.email, "Top Utils 绑定成功", "您的身份验证器已成功绑定。")
+    await send_email(order.email, "Top Utils 绑定成功", "您的身份验证器已成功绑定。")
 
     token_dict = {
         'tool_code': order.tool_id,
