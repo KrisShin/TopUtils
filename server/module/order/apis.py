@@ -59,6 +59,7 @@ async def confirm_totp(request: TOTPConfirmRequest):
     order.is_totp_enabled = True
 
     await order.save()
+    send_email(order.email, "Top Utils 绑定成功", "您的身份验证器已成功绑定。")
 
     token_dict = {
         'tool_code': order.tool_id,
@@ -67,7 +68,7 @@ async def confirm_totp(request: TOTPConfirmRequest):
         'email': order.email,
         'expire_time': order.expire_time,
     }
-    encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id)), algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id, order.email)), algorithm=ALGORITHM)
     return DataResponse(data={'token': encoded_jwt})
 
 
