@@ -57,7 +57,7 @@ export default () => {
             </SocialLink>
           </SocialLinksContainer>
           <CopyrightText>
-            &copy; Copyright 2020, Treact Inc. All Rights Reserved.
+            <Link href="https://beian.miit.gov.cn">蜀ICP备2025144371号-1</Link>
           </CopyrightText>
         </Row>
       </Content>
