@@ -13,6 +13,7 @@ from server.module.common.utils import get_now_UTC_time
 from server.module.order.models import Order
 from server.module.order.schemas import (
     AuthRequest,
+    CheckOrderExistRequest,
     OrderIdRequest,
     RebindRequest,
     TOTPConfirmRequest,
@@ -198,3 +199,24 @@ async def is_valid(request: OrderIdRequest):
         return DataResponse(data={'token': encoded_jwt})
     else:
         raise BadRequest("试用期已结束或订阅过期, 请先续费")
+
+
+@router.post("/check-order-exist", summary="检查邮箱状态接口")
+async def check_order_exist(request: CheckOrderExistRequest):
+    """
+    检查用户邮箱状态，是否已绑定身份验证器。
+    """
+    org_order = await Order.get_or_none(email=request.email, tool_id=request.tool_code)
+    if not org_order:
+        raise BadRequest("订单不存在")
+
+    new_order = await Order.get_or_none(
+        device_info_hashed=request.current_device_hash, tool_id=request.tool_code, id=request.current_order_id
+    )
+    if not new_order:
+        raise BadRequest("当前设备未绑定任何订单")
+
+    if org_order.device_info_hashed != new_order.device_info_hashed:
+        return DataResponse(data={"status": "rebind_required", "existing_order_id": org_order.id})
+
+    return DataResponse(message="邮箱状态正常，已绑定身份验证器。", data={"status": "ok", "existing_order_id": org_order.id})

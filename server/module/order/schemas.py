@@ -25,11 +25,11 @@ class DeviceHashRequest(BaseModel):
     device_hash: str
 
 
-class ToolIdRequest(BaseModel):
+class ToolCodeRequest(BaseModel):
     tool_code: str
 
 
-class ToolDeviceBindRequest(ToolIdRequest, DeviceHashRequest): ...
+class ToolDeviceBindRequest(ToolCodeRequest, DeviceHashRequest): ...
 
 
 class AuthRequest(OrderIdRequest, CodeRequest, DeviceHashRequest):
@@ -43,3 +43,8 @@ class RebindRequest(TOTPConfirmRequest):
 class TOTPSetupResponse(BaseModel):
     uri: str
     message: str = "请使用验证器App扫描二维码或手动输入密钥"
+
+
+class CheckOrderExistRequest(EmailRequest, ToolCodeRequest):
+    current_order_id: str
+    current_device_hash: str

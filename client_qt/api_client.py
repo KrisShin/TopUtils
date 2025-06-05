@@ -37,7 +37,6 @@ class ApiClient:
                 return response.json()['data']['token'], None
             else:
                 return None, response.json()['detail'][0]['msg']
-            response.raise_for_status()
         except httpx.HTTPStatusError as e:
             return None, str(e)
 
@@ -91,3 +90,46 @@ class ApiClient:
             return response.json()['data']['token'], None
         except httpx.HTTPStatusError as e:
             return False, str(e)
+    
+    def check_order_exist(self, email: str, current_order_id: str):
+        # 后端需要此信息来判断：
+        # 1. email + self.tool_code 是否有订单
+        # 2. 如果有，该订单的 device_hash 是否与 self.device_hash 不同
+        # 3. 如果不同，该订单的 order_id 是否与 current_order_id 不同
+        try:
+            response = httpx.post(
+                f"{self.base_url}/order/check-order-exist", # 假设的API端点
+                json={
+                    "email": email,
+                    "tool_code": self.tool_code,
+                    "current_device_hash": self.device_hash,
+                    "current_order_id": current_order_id # 刚刚通过bind获取的ID
+                }
+            )
+            response.raise_for_status()
+            return response.json().get("data"), None # 假设data是 {"status": "...", "existing_order_id": "..."}
+        except httpx.HTTPStatusError as e:
+            return None, self.handle_error(e)
+        except Exception as e: # 更通用的异常捕获
+            return None, str(e)
+        
+    def transfer_license_to_current_device(self, target_order_id: str, email: str):
+        # 后端需要验证 email 是否有权操作 target_order_id (通常是该订单的注册邮箱)
+        # 然后将 target_order_id 的 device_hash 更新为 self.device_hash
+        # 并且可能重置该订单的 TOTP 设置
+        try:
+            response = httpx.post(
+                f"{self.base_url}/order/transfer-license", # 假设的API端点
+                json={
+                    "target_order_id": target_order_id,
+                    "new_device_hash": self.device_hash,
+                    "email_for_verification": email,
+                    "tool_code": self.tool_code
+                }
+            )
+            response.raise_for_status()
+            return response.json().get("data"), None # 假设data是 {"success": True}
+        except httpx.HTTPStatusError as e:
+            return None, self.handle_error(e)
+        except Exception as e:
+            return None, str(e)
