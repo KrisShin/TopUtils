@@ -246,7 +246,7 @@ async def check_order_exist(request: CheckOrderExistRequest):
 
 
 @router.post('/sub-check', summary="启动脚本时检查订阅")
-def check_subscription_status(request: OrderIdRequest):
+async def check_subscription_status(request: OrderIdRequest):
     """
     运行脚本时检查订阅状态。
     """
@@ -257,7 +257,7 @@ def check_subscription_status(request: OrderIdRequest):
 
     if not order.expire_time:
         order.expire_time = utc_now + timedelta(minutes=5)  # 5分钟试用期
-
+        await order.save()
     if not order.is_active:
         raise BadRequest("试用期已结束或订阅过期, 请先续费")
     token_dict = {
