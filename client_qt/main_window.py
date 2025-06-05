@@ -1,5 +1,4 @@
 # main_window.py
-import time
 from PySide6.QtWidgets import QMainWindow, QStackedWidget, QMessageBox
 from PySide6.QtCore import QThreadPool, Slot
 from jose import jwt, JWTError
@@ -14,7 +13,7 @@ from worker import Worker
 from widgets.loading_page import LoadingPage
 from widgets.setup_page import SetupPage
 from widgets.login_page import LoginPage
-from widgets.main_app_page import MainAppPage
+from scripts.auto_click import MainAppPage
 
 
 class MainWindow(QMainWindow):
@@ -171,11 +170,6 @@ class MainWindow(QMainWindow):
             else:
                 self.show_page(self.setup_page)
                 self.setup_page.show_email_step()
-        elif status == "login_required":
-            self.api.order_id = data.get("existing_order_id", self.api.order_id)
-            self.user_data['order_id'] = self.api.order_id
-            self.show_info("账户已存在，请直接登录。")
-            self.setup_login_page(mode="login")
         else:
             self.show_error(f"未知的邮箱状态: {status}")
             self.show_page(self.setup_page)
@@ -343,25 +337,16 @@ class MainWindow(QMainWindow):
     # 流程四：主应用
     # ===================================================================
     def setup_main_app_page(self):
+
         if not hasattr(self, 'main_app_page') or self.main_app_page is None:
-            self.main_app_page = MainAppPage(email=self.user_data['email'])
-            self.main_app_page.task_requested.connect(self.on_task_requested)
+            self.main_app_page = MainAppPage(
+                email=self.user_data.get('email', '未知用户'),
+                api_client_instance=self.api,
+                initial_auth_token_data=self.user_data,  # 传递解码后的完整JWT数据
+                thread_pool_instance=self.thread_pool,  # 传递线程池
+            )
+            self.main_app_page.authorization_required.connect(self.handle_auth_required_from_app)
             self.stacked_widget.addWidget(self.main_app_page)
         else:
             self.main_app_page.welcome_label.setText(f"授权成功！欢迎您，{self.user_data['email']}")
         self.show_page(self.main_app_page)
-
-    @Slot()
-    def on_task_requested(self):
-        def dummy_task():
-            for i in range(101):
-                time.sleep(0.02)
-            return "任务结果数据"
-
-        self.main_app_page.append_log("开始执行模拟任务...")
-        self.run_in_background(
-            dummy_task,
-            lambda res: self.main_app_page.append_log(f"任务成功完成，结果: {res}"),
-            on_error=lambda err_str: self.main_app_page.append_log(f"任务失败: {err_str}"),
-            on_finished=self.main_app_page.on_task_finished,
-        )

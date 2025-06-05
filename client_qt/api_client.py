@@ -11,7 +11,7 @@ BASE_URL = "https://util.toputils.top/api"  # 您的 FastAPI 服务器地址
 TOOL_CODE = '2ab2171ad8ba4521baf98ac5ff78a746'
 
 
-class ApiClient:
+class ApiClient(object):
     """封装所有与后端API的交互，移除打印语句"""
 
     def __init__(self, base_url):
@@ -133,6 +133,27 @@ class ApiClient:
             )
             if response.status_code == 200:
                 return response.json()['data'], None
+            elif response.status_code < 500: 
+                return None, response.json()['detail'][0]['msg']
+            else:
+                response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            from traceback import print_exc
+
+            print_exc()
+            return None, str(e)
+        except Exception as e:  # 更通用的异常捕获
+            return None, str(e)
+        
+    def check_subscription_status(self, order_id: str):
+        try:
+            response = httpx.post(f"{self.base_url}/order/sub-check", json={"order_id": order_id})
+            response.raise_for_status()
+            token_str = response.json().get("data", {}).get("token")
+            if not token_str:
+                return None, "服务器未返回有效令牌"
+            if response.status_code == 200:
+                return token_str, None
             elif response.status_code < 500: 
                 return None, response.json()['detail'][0]['msg']
             else:
