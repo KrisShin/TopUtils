@@ -15,7 +15,6 @@ from server.module.order.schemas import (
     AuthRequest,
     CheckOrderExistRequest,
     OrderIdRequest,
-    RebindRequest,
     TOTPConfirmRequest,
     TOTPSetupResponse,
     ToolDeviceBindRequest,
@@ -138,30 +137,48 @@ async def send_email_code(request: OrderIdRequest):
 
 
 @router.post("/auth/rebind", summary="设备换绑接口")
-async def rebind_device(request: RebindRequest):
+async def rebind_device(request: AuthRequest):
     """
     当用户在已绑定设备之外的电脑上登录时，调用此接口进行换绑。
     """
-    order = await Order.get_or_none(email=request.email)
-    if not order:
+    old_order = await Order.get_or_none(email=request.email, tool_id=request.tool_code)
+    if not old_order:
         raise BadRequest("用户或订单不存在")
 
-    if not order.is_totp_enabled or not order.is_active:
+    if not old_order.is_totp_enabled or not old_order.is_active:
         raise NoPermission("账户状态异常")
-
-    if not verify_totp_code(order.totp_secret, request.code):
-        raise AuthorizationFailed("动态码错误")
-
+    
     # 检查换绑冷却时间
-    if order.is_rebind_in_cooldown:
+    if old_order.is_rebind_in_cooldown:
         raise TooManyRequest("换绑操作过于频繁，请24小时后再试")
 
-    # 执行换绑
-    order.device_info_hashed = request.new_device_hash
-    order.last_rebind_time = get_now_UTC_time()
-    await order.save()
+    if request.check_method == 1:
+        if not verify_totp_code(old_order.totp_secret, request.code):
+            raise AuthorizationFailed("动态码错误")
+    elif request.check_method == 2:
+        request.code = request.code.strip().upper()  # 确保验证码是大写
+        if old_order.email_verify_code != request.code or old_order.email_verify_expire < get_now_UTC_time():
+            raise BadRequest("验证码错误或失效")
+        old_order.email_verify_code = None  # 验证成功后清除验证码
+        old_order.email_verify_expire = None
+        await old_order.save()
 
-    return BaseResponse("设备换绑成功！")
+
+    # 执行换绑
+    old_order.device_info_hashed = request.device_hash
+    old_order.last_rebind_time = get_now_UTC_time()
+    await old_order.save()
+    await Order.filter(id=request.order_id).delete()  # 删除当前设备的订单记录
+
+    token_dict = {
+        'tool_code': old_order.tool_id,
+        'device_hash': old_order.device_info_hashed,
+        'order_id': old_order.id,
+        'email': old_order.email,
+        'expire_time': old_order.expire_time,
+    }
+    encoded_jwt = jwt.encode(token_dict, '_'.join((old_order.tool_id, old_order.device_info_hashed, old_order.id, old_order.email)), algorithm=ALGORITHM)
+    return DataResponse(data={'token': encoded_jwt})
 
 
 @router.post("/bind", summary="设备工具绑定接口")
