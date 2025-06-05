@@ -59,7 +59,7 @@ class SetupPage(QWidget):
         layout = QVBoxLayout(page)
         layout.setAlignment(Qt.AlignCenter)
 
-        info_label = QLabel("请使用微信搜索[腾讯身份验证器]小程序选择[二维码验证]扫描下方的二维码：")
+        info_label = QLabel("请使用微信搜索[腾讯身份验证器]小程序选择[二维码激活]扫描下方的二维码：")
         self.qr_label = QLabel()
         self.qr_label.setFixedSize(250, 250)
         self.qr_label.setAlignment(Qt.AlignCenter)

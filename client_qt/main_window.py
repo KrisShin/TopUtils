@@ -131,10 +131,10 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def on_email_submitted(self, email):
         self.user_data['email'] = email
-        self.loading_page.set_status(f"正在检查邮箱 {email} 状态...")
+        self.loading_page.set_status(f"正在检查 {email} 订阅状态...")
         self.show_page(self.loading_page)
         self.run_in_background(
-            lambda: self.api.check_email_status(email=self.user_data['email'], current_order_id=self.api.order_id),
+            lambda: self.api.check_order_exist(email=self.user_data['email'], current_order_id=self.api.order_id),
             self.on_check_email_status_result,
             on_finished=self.setup_page.reset_buttons,
         )
@@ -152,17 +152,13 @@ class MainWindow(QMainWindow):
         if status == "ok":
             self.loading_page.set_status(f"为新用户 {self.user_data['email']} 请求TOTP授权...")
             self.show_page(self.loading_page)
-            self.run_in_background(
-                lambda: self.api.setup_totp(self.api.order_id), self.on_totp_uri_received, on_finished=self.setup_page.reset_buttons
-            )
+            self.run_in_background(lambda: self.api.setup_totp(self.api.order_id), self.on_totp_uri_received, on_finished=self.setup_page.reset_buttons)
         elif status == "rebind_required":
             self.rebind_target_order_id = data.get("existing_order_id")
             reply = QMessageBox.question(
                 self,
                 "设备换绑确认",
-                f"邮箱 {self.user_data['email']} 已在另一台设备上激活此工具。\n"
-                f"是否要将授权转移到当前设备？\n"
-                f"（原设备将需要重新激活）",
+                f"邮箱 {self.user_data['email']} 已在另一台设备上激活此工具。\n" f"是否要将授权转移到当前设备？\n" f"（原设备将需要重新激活）",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -221,8 +217,8 @@ class MainWindow(QMainWindow):
             self.show_page(self.setup_page)
             self.setup_page.show_totp_step(self.user_data.get('_last_uri_for_retry', ''))
             return
-        self.show_info("身份验证器绑定成功！现在请登录。")
-        self.setup_login_page(mode="login")
+        self.show_info("身份验证器绑定成功！欢迎使用。")
+        self.setup_main_app_page()
 
     # ===================================================================
     # 流程三：用户登录 / 换绑身份验证
@@ -243,9 +239,7 @@ class MainWindow(QMainWindow):
         else:
             # 如果页面已存在，更新其状态并重新连接信号以匹配当前模式
             self.auth_page_instance.user_email = self.user_data['email']
-            self.auth_page_instance.welcome_label.setText(
-                f"授权验证 - {self.user_data['email']}" if mode == "rebind_auth" else f"你好, {self.user_data['email']}"
-            )
+            self.auth_page_instance.welcome_label.setText(f"授权验证 - {self.user_data['email']}" if mode == "rebind_auth" else f"你好, {self.user_data['email']}")
             self.auth_page_instance.reset_login_buttons()
 
             # 断开旧连接，连接新模式的槽
@@ -283,23 +277,18 @@ class MainWindow(QMainWindow):
         self.auth_page_instance.send_code_button.setEnabled(False)
         # 常规登录时，邮件码是针对当前 user_data['order_id'] 的邮箱 self.user_data['email']
         self.run_in_background(
-            lambda: self.api.send_email_code(self.user_data['email']),  # 假设send_email_code通过email和tool_code定位
+            lambda: self.api.send_email_code(self.api.order_id),  # 假设send_email_code通过email和tool_code定位
             self.on_auth_email_code_sent_result,  # 通用处理邮件码发送结果
         )
 
     # --- 换绑验证的槽函数 ---
     @Slot(str, str)
-    def on_rebind_auth_code_submitted_slot(self, method_type, code):
+    def on_rebind_auth_code_submitted_slot(self, check_method, code):
         """当为换绑验证提交验证码时"""
         self.auth_page_instance.on_login_start()  # 复用按钮状态
-        # 【新API调用】验证换绑授权码
-        # 您需要在ApiClient中实现 verify_rebind_auth_code
-        # 它应该接收: target_order_id, email, code_type, code
         self.run_in_background(
-            lambda: self.api.verify_rebind_auth_code(
-                target_order_id=self.rebind_target_order_id, email=self.user_data['email'], code_type=method_type, code=code
-            ),
-            self.on_rebind_auth_code_verified_result,
+            lambda: self.api.rebind(email=self.user_data['email'], check_method=check_method, code=code),
+            self.on_rebind_finished_result,
             on_finished=self.auth_page_instance.reset_login_buttons,
         )
 
@@ -308,51 +297,28 @@ class MainWindow(QMainWindow):
         """当为换绑验证请求邮件码时"""
         self.auth_page_instance.send_code_button.setText("发送中...")
         self.auth_page_instance.send_code_button.setEnabled(False)
-        # 【新API调用】为换绑目标订单发送邮件验证码
-        # 您需要在ApiClient中实现 send_rebind_verification_email_code
-        # 它应该接收: target_order_id, email
         self.run_in_background(
-            lambda: self.api.send_email_code(target_order_id=self.rebind_target_order_id),
+            lambda: self.api.send_email_code(order_id=self.rebind_target_order_id),
             self.on_auth_email_code_sent_result,  # 通用处理邮件码发送结果
         )
 
     @Slot(object)
-    def on_rebind_auth_code_verified_result(self, result):
-        """处理换绑授权码验证的结果"""
-        data, error = result
-        if error:
-            self.show_error(f"换绑身份验证失败: {error}")
-            # 停留在验证页面，允许用户重试
-            return
-
-        # 身份验证成功，现在执行实际的换绑操作
-        self.show_info("身份验证成功！正在执行设备换绑...")
-        self.loading_page.set_status(f"正在为订单 {self.rebind_target_order_id} 执行换绑...")
-        self.show_page(self.loading_page)
-        self.run_in_background(
-            lambda: self.api.transfer_license_to_current_device(target_order_id=self.rebind_target_order_id, email=self.user_data['email']),
-            self.on_rebind_finished_result,  # 连接到之前定义的换绑完成处理
-            # on_finished 如果需要，可以重置 auth_page_instance 的按钮
-        )
-
-    @Slot(object)
     def on_rebind_finished_result(self, result):  # 已存在，处理换绑API调用后的结果
-        data, error = result
+        token, error = result
         if error:
             self.show_error(f"设备换绑失败: {error}")
             self.show_page(self.setup_page)  # 失败则回到设置流程起点
             self.setup_page.show_email_step()
             return
-
+        secret_key = '_'.join((self.api.tool_code, self.api.device_hash, self.rebind_target_order_id, self.user_data['email']))
+        self.user_data = jwt.decode(token, secret_key, algorithms=["HS256"])
+        self.rebind_target_order_id = None
         self.api.order_id = self.rebind_target_order_id
         self.user_data['order_id'] = self.rebind_target_order_id
-        self.show_info("设备换绑成功！现在请为此设备设置身份验证器。")
+        self.show_info("设备换绑成功！24小时内只能换绑一次")
 
         self.loading_page.set_status(f"为换绑订单 {self.api.order_id} 请求TOTP...")
-        self.show_page(self.loading_page)
-        self.run_in_background(
-            lambda: self.api.setup_totp(self.api.order_id), self.on_totp_uri_received, on_finished=self.setup_page.reset_buttons
-        )
+        self.setup_main_app_page()
 
     # --- 通用邮件码发送结果处理 ---
     @Slot(object)
