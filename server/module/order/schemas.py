@@ -32,8 +32,11 @@ class ToolCodeRequest(BaseModel):
 class ToolDeviceBindRequest(ToolCodeRequest, DeviceHashRequest): ...
 
 
-class AuthRequest(OrderIdRequest, CodeRequest, DeviceHashRequest):
+class BindRequest(OrderIdRequest, CodeRequest, DeviceHashRequest):
     check_method: int = Field(1, description="验证方式，1: TOTP动态码, 2: 邮箱验证码", ge=1, le=2)
+
+
+class ReBindRequest(EmailRequest, ToolCodeRequest, BindRequest): ...
 
 
 class TOTPSetupResponse(BaseModel):

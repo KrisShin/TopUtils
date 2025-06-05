@@ -12,9 +12,10 @@ from server.module.common.global_variable import BaseResponse, DataResponse
 from server.module.common.utils import get_now_UTC_time
 from server.module.order.models import Order
 from server.module.order.schemas import (
-    AuthRequest,
+    BindRequest,
     CheckOrderExistRequest,
     OrderIdRequest,
+    ReBindRequest,
     TOTPConfirmRequest,
     TOTPSetupResponse,
     ToolDeviceBindRequest,
@@ -73,7 +74,7 @@ async def confirm_totp(request: TOTPConfirmRequest):
 
 
 @router.post("/auth/login", summary="软件客户端登录接口")
-async def software_login(request: AuthRequest):
+async def software_login(request: BindRequest):
     """
     软件每次启动时调用此接口进行验证。
     """
@@ -128,7 +129,7 @@ async def send_email_code(request: OrderIdRequest):
 
     code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))  # 生成6位随机大写字母验证码
     order.email_verify_code = code
-    order.email_verify_expire = get_now_UTC_time() + timedelta(minutes=5)  # 验证码有效期为5分钟
+    order.email_verify_expire = get_now_UTC_time() + timedelta(minutes=10)  # 验证码有效期为5分钟
     await order.save()
 
     await send_email(order.email, "Top Utils 验证码", f"您的验证码是：{code}，请在5分钟内使用。")
@@ -137,7 +138,7 @@ async def send_email_code(request: OrderIdRequest):
 
 
 @router.post("/auth/rebind", summary="设备换绑接口")
-async def rebind_device(request: AuthRequest):
+async def rebind_device(request: ReBindRequest):
     """
     当用户在已绑定设备之外的电脑上登录时，调用此接口进行换绑。
     """
@@ -147,7 +148,7 @@ async def rebind_device(request: AuthRequest):
 
     if not old_order.is_totp_enabled or not old_order.is_active:
         raise NoPermission("账户状态异常")
-    
+
     # 检查换绑冷却时间
     if old_order.is_rebind_in_cooldown:
         raise TooManyRequest("换绑操作过于频繁，请24小时后再试")
@@ -162,13 +163,14 @@ async def rebind_device(request: AuthRequest):
         old_order.email_verify_code = None  # 验证成功后清除验证码
         old_order.email_verify_expire = None
         await old_order.save()
-
+    else:
+        raise BadRequest("无效的验证方式")
 
     # 执行换绑
+    await Order.filter(id=request.order_id).delete()  # 删除当前设备的订单记录
     old_order.device_info_hashed = request.device_hash
     old_order.last_rebind_time = get_now_UTC_time()
     await old_order.save()
-    await Order.filter(id=request.order_id).delete()  # 删除当前设备的订单记录
 
     token_dict = {
         'tool_code': old_order.tool_id,
@@ -177,7 +179,9 @@ async def rebind_device(request: AuthRequest):
         'email': old_order.email,
         'expire_time': old_order.expire_time,
     }
-    encoded_jwt = jwt.encode(token_dict, '_'.join((old_order.tool_id, old_order.device_info_hashed, old_order.id, old_order.email)), algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(
+        token_dict, '_'.join((old_order.tool_id, old_order.device_info_hashed, old_order.id, old_order.email)), algorithm=ALGORITHM
+    )
     return DataResponse(data={'token': encoded_jwt})
 
 
@@ -225,7 +229,7 @@ async def check_order_exist(request: CheckOrderExistRequest):
     """
     org_order = await Order.get_or_none(email=request.email, tool_id=request.tool_code)
     if not org_order:
-        raise BadRequest("订单不存在")
+        return DataResponse(message="欢迎新用户", data={"status": "ok", "existing_order_id": None})
 
     new_order = await Order.get_or_none(
         device_info_hashed=request.current_device_hash, tool_id=request.tool_code, id=request.current_order_id
@@ -234,6 +238,36 @@ async def check_order_exist(request: CheckOrderExistRequest):
         raise BadRequest("当前设备未绑定任何订单")
 
     if org_order.device_info_hashed != new_order.device_info_hashed:
+        if org_order.last_rebind_time and org_order.last_rebind_time > get_now_UTC_time() - timedelta(days=1):
+            raise TooManyRequest("24小时内已有换绑操作, 请稍后再试")
         return DataResponse(data={"status": "rebind_required", "existing_order_id": org_order.id})
 
     return DataResponse(message="邮箱状态正常，已绑定身份验证器。", data={"status": "ok", "existing_order_id": org_order.id})
+
+
+@router.post('/sub-check', summary="启动脚本时检查订阅")
+def check_subscription_status(request: OrderIdRequest):
+    """
+    运行脚本时检查订阅状态。
+    """
+    order = Order.get_or_none(id=request.order_id)
+    utc_now = get_now_UTC_time()
+    if not order:
+        raise BadRequest("订单不存在")
+
+    if not order.expire_time:
+        order.expire_time = utc_now + timedelta(minutes=5)  # 5分钟试用期
+
+    if not order.is_active:
+        raise BadRequest("试用期已结束或订阅过期, 请先续费")
+    token_dict = {
+        'tool_code': order.tool_id,
+        'device_hash': order.device_info_hashed,
+        'order_id': order.id,
+        'email': order.email,
+        'expire_time': order.expire_time,
+        'rest_time': order.expire_time - utc_now,
+        'reminder': (order.expire_time - utc_now) <= timedelta(minutes=5),  # 是否需要提醒,
+    }
+    encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id, order.email)), algorithm=ALGORITHM)
+    return DataResponse(data={'token': encoded_jwt})
