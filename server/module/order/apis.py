@@ -5,7 +5,7 @@ from fastapi import APIRouter
 import pyotp
 from jose import jwt
 
-from server.config.settings import ALGORITHM
+from server.config.settings import ALGORITHM, DEBUG
 from server.module.common.email_utils import send_email
 from server.module.common.exceptions import AuthorizationFailed, BadRequest, NoPermission, TooManyRequest
 from server.module.common.global_variable import BaseResponse, DataResponse
@@ -67,7 +67,7 @@ async def confirm_totp(request: TOTPConfirmRequest):
         'device_hash': order.device_info_hashed,
         'order_id': order.id,
         'email': order.email,
-        'expire_time': order.expire_time,
+        'expire_time': order.expire_time.timestamp(),
     }
     encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id, order.email)), algorithm=ALGORITHM)
     return DataResponse(data={'token': encoded_jwt})
@@ -83,10 +83,7 @@ async def software_login(request: BindRequest):
     if not order.is_totp_enabled:
         raise BadRequest("请先绑定身份验证器")
 
-    if not order.is_active:
-        raise BadRequest("订阅已过期或无效")
-
-    if request.check_method == 1:
+    if request.check_method == 1 and not DEBUG:
         if not verify_totp_code(order.totp_secret, request.code):
             raise BadRequest("验证码错误或失效")
     elif request.check_method == 2:
@@ -106,7 +103,7 @@ async def software_login(request: BindRequest):
         'device_hash': order.device_info_hashed,
         'order_id': order.id,
         'email': order.email,
-        'expire_time': order.expire_time,
+        'expire_time': order.expire_time.timestamp(),
     }
     encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id, order.email)), algorithm=ALGORITHM)
     return DataResponse(data={'token': encoded_jwt})
@@ -123,9 +120,6 @@ async def send_email_code(request: OrderIdRequest):
 
     if not order.is_totp_enabled:
         raise BadRequest("请先绑定身份验证器")
-
-    if not order.is_active:
-        raise BadRequest("订阅已过期或无效")
 
     code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))  # 生成6位随机大写字母验证码
     order.email_verify_code = code
@@ -177,7 +171,7 @@ async def rebind_device(request: ReBindRequest):
         'device_hash': old_order.device_info_hashed,
         'order_id': old_order.id,
         'email': old_order.email,
-        'expire_time': old_order.expire_time,
+        'expire_time': old_order.expire_time.timestamp(),
     }
     encoded_jwt = jwt.encode(
         token_dict, '_'.join((old_order.tool_id, old_order.device_info_hashed, old_order.id, old_order.email)), algorithm=ALGORITHM
@@ -192,8 +186,9 @@ async def bind_device(request: ToolDeviceBindRequest):
     """
     order = await Order.get_or_none(device_info_hashed=request.device_hash, tool_id=request.tool_code)
     if order:
-        if not order.is_active:
-            raise BadRequest("试用期已结束或订阅过期, 请先续费")
+        # if not order.is_active:
+        #     raise BadRequest("试用期已结束或订阅过期, 请先续费")
+        pass
     else:
         order = await Order.create(device_info_hashed=request.device_hash, tool_id=request.tool_code)
 
@@ -208,18 +203,15 @@ async def is_valid(request: OrderIdRequest):
     order = await Order.get_or_none(id=request.order_id)
     if not order:
         raise BadRequest("订单不存在")
-    if order.is_active:
-        token_dict = {
-            'tool_code': order.tool_id,
-            'device_hash': order.device_info_hashed,
-            'order_id': order.id,
-            'email': order.email,
-            'expire_time': order.expire_time,
-        }
-        encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id)), algorithm=ALGORITHM)
-        return DataResponse(data={'token': encoded_jwt})
-    else:
-        raise BadRequest("试用期已结束或订阅过期, 请先续费")
+    token_dict = {
+        'tool_code': order.tool_id,
+        'device_hash': order.device_info_hashed,
+        'order_id': order.id,
+        'email': order.email,
+        'expire_time': order.expire_time.timestamp(),
+    }
+    encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id)), algorithm=ALGORITHM)
+    return DataResponse(data={'token': encoded_jwt})
 
 
 @router.post("/check-order-exist", summary="检查邮箱状态接口")
@@ -265,8 +257,8 @@ async def check_subscription_status(request: OrderIdRequest):
         'device_hash': order.device_info_hashed,
         'order_id': order.id,
         'email': order.email,
-        'expire_time': order.expire_time,
-        'rest_time': order.expire_time - utc_now,
+        'expire_time': order.expire_time.timestamp(),
+        'rest_time': (order.expire_time - utc_now).seconds,
         'reminder': (order.expire_time - utc_now) <= timedelta(minutes=5),  # 是否需要提醒,
     }
     encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id, order.email)), algorithm=ALGORITHM)
