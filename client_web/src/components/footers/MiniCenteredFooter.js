@@ -36,16 +36,16 @@ export default () => {
         <Row>
           <LogoContainer>
             <LogoImg src={logo} />
-            <LogoText>Treact</LogoText>
+            <LogoText>顶尖工具</LogoText>
           </LogoContainer>
           <LinksContainer>
-            <Link href="#">Home</Link>
-            <Link href="#">About</Link>
-            <Link href="#">Contact Us</Link>
+            <Link href="#">首页</Link>
+            <Link href="#">关于我们</Link>
+            {/* <Link href="#"></Link>
             <Link href="#">Blog</Link>
-            <Link href="#">Reviews</Link>
+            <Link href="#">Reviews</Link> */}
           </LinksContainer>
-          <SocialLinksContainer>
+          {/* <SocialLinksContainer>
             <SocialLink href="https://facebook.com">
               <FacebookIcon />
             </SocialLink>
@@ -55,7 +55,7 @@ export default () => {
             <SocialLink href="https://youtube.com">
               <YoutubeIcon />
             </SocialLink>
-          </SocialLinksContainer>
+          </SocialLinksContainer> */}
           <CopyrightText>
             <Link href="https://beian.miit.gov.cn">蜀ICP备2025144371号-1</Link>
           </CopyrightText>

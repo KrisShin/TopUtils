@@ -57,8 +57,8 @@ export default ({textOnLeft = false}) => {
         </ImageColumn>
         <TextColumn textOnLeft={textOnLeft}>
           <TextContent>
-            <Heading>We have the best service.</Heading>
-            <Description>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</Description>
+            <Heading>最佳工具排行</Heading>
+            <Description>我不知道这一段该写什么, 但这里是应该有一段文字的, 所以你看到了这一段文字不要奇怪, 他就是一段占位置的字符串而已</Description>
             <Statistics>
               {statistics.map((statistic, index) => (
               <Statistic key={index}>

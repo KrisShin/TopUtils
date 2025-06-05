@@ -84,13 +84,12 @@ export default () => {
         <ThreeColumn>
           <HeadingColumn>
             <HeadingInfoContainer>
-              <HeadingTitle>Trending Tours</HeadingTitle>
+              <HeadingTitle>界面展示</HeadingTitle>
               <HeadingDescription>
-                Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et
-                dolore magna aliqua enim ad minim veniam.
+                我不知道这一段该写什么, 但这里是应该有一段文字的, 所以你看到了这一段文字不要奇怪, 他就是一段占位置的字符串而已
               </HeadingDescription>
               <PrimaryLink>
-                View All Tours <ArrowRightIcon />
+                查看我们的工具 <ArrowRightIcon />
               </PrimaryLink>
             </HeadingInfoContainer>
           </HeadingColumn>
@@ -102,7 +101,7 @@ export default () => {
                   <CardHeader>
                     <CardType>{card.type}</CardType>
                     <CardPrice>
-                      <CardPriceAmount>{card.pricePerDay}</CardPriceAmount> per day
+                      <CardPriceAmount>{card.pricePerDay}</CardPriceAmount> /天
                     </CardPrice>
                   </CardHeader>
                   <CardTitle>{card.title}</CardTitle>
@@ -117,7 +116,7 @@ export default () => {
                       <LocationIcon /> {card.locationText}
                     </CardMetaFeature>
                   </CardMeta>
-                  <CardAction>Book Now</CardAction>
+                  <CardAction>现在查看</CardAction>
                 </CardText>
               </Card>
             </CardColumn>

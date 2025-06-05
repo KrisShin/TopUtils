@@ -44,25 +44,25 @@ const Actions = styled.div`
 export default ({
   navLinks = [
     <NavLinks key={1}>
-      <NavLink href="#">About</NavLink>
-      <NavLink href="#">Blog</NavLink>
-      <NavLink href="#">Pricing</NavLink>
-      <NavLink href="#">Login</NavLink>
+      <NavLink href="#">关于我们</NavLink>
+      <NavLink href="#">博客</NavLink>
+      {/* <NavLink href="#">价格</NavLink> */}
+      {/* <NavLink href="#">Login</NavLink> */}
     </NavLinks>
   ],
   heading = (
     <>
-      Find Perfect Hotels
+      我们的高效工具
       <wbr />
       <br />
-      <span tw="text-primary-500">anywhere you go.</span>
+      <span tw="text-primary-500">从工具层面提高工作效率</span>
     </>
   ),
-  description = "We've been in the hotels business across the world for 5 years now. We assure you that you will always enjoy your stay with us.",
+  description = "我不知道这一段该写什么, 但这里是应该有一段文字的, 所以你看到了这一段文字不要奇怪, 他就是一段占位置的字符串而已",
   primaryActionUrl = "#",
-  primaryActionText = "Sign Up",
+  primaryActionText = "点击查看",
   secondaryActionUrl = "#",
-  secondaryActionText = "Search Hotels"
+  secondaryActionText = "查找工具"
 }) => {
   return (
     <Container>
