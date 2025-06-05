@@ -89,10 +89,12 @@ async def software_login(request: AuthRequest):
         if not verify_totp_code(order.totp_secret, request.code):
             raise BadRequest("验证码错误或失效")
     elif request.check_method == 2:
+        request.code = request.code.strip().upper()  # 确保验证码是大写
         if order.email_verify_code != request.code or order.email_verify_expire < get_now_UTC_time():
             raise BadRequest("验证码错误或失效")
         order.email_verify_code = None  # 验证成功后清除验证码
         order.email_verify_expire = None
+        await order.save()
 
     # 检查设备哈希是否匹配
     if order.device_info_hashed != request.device_hash:
