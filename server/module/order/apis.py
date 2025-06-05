@@ -250,7 +250,7 @@ async def check_subscription_status(request: OrderIdRequest):
     """
     运行脚本时检查订阅状态。
     """
-    order = Order.get_or_none(id=request.order_id)
+    order = await Order.get_or_none(id=request.order_id)
     utc_now = get_now_UTC_time()
     if not order:
         raise BadRequest("订单不存在")
