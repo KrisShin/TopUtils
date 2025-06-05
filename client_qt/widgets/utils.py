@@ -8,126 +8,198 @@ import psutil
 from PIL import Image
 
 
+def execute_powershell_command(command: str) -> str:
+    """
+    执行 PowerShell 命令并返回其标准输出。
+    """
+    try:
+        # 使用 'powershell -Command' 来执行命令
+        # universal_newlines=True (或 text=True in Python 3.7+) 使输出为字符串
+        # capture_output=True (Python 3.7+) 是 check_output 的现代替代
+        result = subprocess.run(
+            ["powershell", "-Command", command],
+            capture_output=True,
+            text=True,
+            check=True,  # 如果命令返回非零退出码则抛出 CalledProcessError
+            shell=True,  # 在Windows上，powershell可能需要shell=True才能找到
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        print(f"PowerShell command failed: {e.cmd}, Error: {e.stderr}")
+        return ""
+    except FileNotFoundError:
+        print("PowerShell not found. Please ensure it is installed and in PATH.")
+        return ""
+    except Exception as e:
+        print(f"An unexpected error occurred while executing PowerShell command: {e}")
+        return ""
+
+
 def is_running_in_vm():
     """
     通过检查硬件制造商信息和网卡MAC地址来判断是否在虚拟机中运行。
     返回 True 如果检测到是虚拟机，否则返回 False。
     """
-    # 转换为小写以便于不区分大小写的比较
-    vm_keywords = ["vmware", "virtualbox", "qemu", "kvm", "hyper-v", "microsoft corporation", "innotek gmbh", "parallels"]
-    vm_mac_prefixes = ["00:05:69", "00:0C:29", "00:1C:42", "08:00:27", "00:50:56"]
+    vm_keywords = [
+        "vmware",
+        "virtualbox",
+        "qemu",
+        "kvm",
+        "hyper-v",
+        "microsoft corporation",
+        "innotek gmbh",
+        "parallels",
+        "xen",
+    ]  # 添加 Xen
+    vm_mac_prefixes = ["00:05:69", "00:0C:29", "00:1C:42", "08:00:27", "00:50:56", "00:16:3E"]  # 添加 Xen MAC
 
-    # --- 1. 检查网卡MAC地址前缀 (跨平台) ---
     try:
         for interface, addrs in psutil.net_if_addrs().items():
             for addr in addrs:
-                if addr.family == psutil.AF_LINK:
+                if addr.family == psutil.AF_LINK:  # AF_LINK 通常表示MAC地址
                     mac_prefix = addr.address[:8].upper()
                     if mac_prefix in vm_mac_prefixes:
                         # print(f"检测到虚拟机MAC地址前缀: {mac_prefix}")
                         return True
-    except Exception:
-        pass  # 获取失败则继续
+    except Exception as e:
+        print(f"检查MAC地址时出错: {e}")
+        pass
 
-    # --- 2. 检查硬件制造商信息 (分平台) ---
     try:
         system = platform.system()
-        vendor_info = ""
+        vendor_info_parts = []
 
         if system == "Windows":
-            # 检查系统制造商和BIOS信息
-            vendor_info += subprocess.check_output('wmic csproduct get vendor', shell=True).decode().lower()
-            vendor_info += subprocess.check_output('wmic bios get manufacturer', shell=True).decode().lower()
+            # 使用 PowerShell 获取系统制造商和BIOS信息
+            # Get-WmiObject Win32_ComputerSystem | Select -ExpandProperty Manufacturer
+            cs_manufacturer = execute_powershell_command(
+                "Get-WmiObject -Class Win32_ComputerSystem | Select-Object -ExpandProperty Manufacturer"
+            )
+            if cs_manufacturer:
+                vendor_info_parts.append(cs_manufacturer.lower())
+
+            # Get-WmiObject Win32_BIOS | Select -ExpandProperty Manufacturer
+            bios_manufacturer = execute_powershell_command("Get-WmiObject -Class Win32_BIOS | Select-Object -ExpandProperty Manufacturer")
+            if bios_manufacturer:
+                vendor_info_parts.append(bios_manufacturer.lower())
+
+            # 检查 Hyper-V 特有的主板制造商
+            baseboard_manufacturer = execute_powershell_command(
+                "Get-WmiObject -Class Win32_BaseBoard | Select-Object -ExpandProperty Manufacturer"
+            )
+            if baseboard_manufacturer:
+                vendor_info_parts.append(baseboard_manufacturer.lower())
 
         elif system == "Linux":
-            # 检查DMI信息
-            if os.path.exists('/sys/class/dmi/id/sys_vendor'):
-                with open('/sys/class/dmi/id/sys_vendor') as f:
-                    vendor_info += f.read().lower()
-            if os.path.exists('/sys/class/dmi/id/product_name'):
-                with open('/sys/class/dmi/id/product_name') as f:
-                    vendor_info += f.read().lower()
+            dmi_paths = {
+                "sys_vendor": "/sys/class/dmi/id/sys_vendor",
+                "product_name": "/sys/class/dmi/id/product_name",
+                "board_vendor": "/sys/class/dmi/id/board_vendor",  # 主板制造商
+            }
+            for key, path in dmi_paths.items():
+                if os.path.exists(path):
+                    try:
+                        with open(path, 'r') as f:
+                            vendor_info_parts.append(f.read().strip().lower())
+                    except Exception as e:
+                        print(f"读取DMI信息失败 {path}: {e}")
 
         elif system == "Darwin":  # macOS
-            vendor_info += subprocess.check_output("ioreg -l | grep -E 'Manufacturer|Model'", shell=True).decode().lower()
+            try:
+                # ioreg 更倾向于获取Model Identifier和Manufacturer
+                ioreg_output = subprocess.check_output(
+                    "ioreg -l | grep -E 'IOPlatformExpertDevice|Manufacturer'", shell=True, text=True
+                ).lower()
+                vendor_info_parts.append(ioreg_output)
+            except Exception as e:
+                print(f"执行 ioreg 失败: {e}")
 
-        for keyword in vm_keywords:
-            if keyword in vendor_info:
-                # print(f"检测到虚拟机硬件关键词: {keyword}")
-                return True
+        combined_vendor_info = " ".join(vendor_info_parts)
+        if combined_vendor_info:  # 仅当获取到信息时才检查
+            for keyword in vm_keywords:
+                if keyword in combined_vendor_info:
+                    # print(f"检测到虚拟机硬件关键词: {keyword} in '{combined_vendor_info}'")
+                    return True
 
-    except Exception:
-        pass  # 命令执行失败则继续
+    except Exception as e:
+        print(f"检查硬件制造商时出错: {e}")
+        pass
 
     return False
 
 
-# --- 硬件与配置管理 ---
 def get_device_hash():
     """
     生成一个更健壮、更稳定的设备唯一标识符。
     它结合了主板序列号、CPU ID和所有物理网卡的MAC地址，并跨平台兼容。
     """
     system = platform.system()
-
     board_serial = ""
     cpu_id = ""
     mac_addresses = []
 
     try:
-        # --- 获取主板和CPU信息 (OS-specific) ---
         if system == "Windows":
-            # 使用WMIC命令行工具获取
-            board_serial = subprocess.check_output('wmic baseboard get SerialNumber', shell=True).decode().split('\n')[1].strip()
-            cpu_id = subprocess.check_output('wmic cpu get ProcessorId', shell=True).decode().split('\n')[1].strip()
+            board_serial = execute_powershell_command("Get-WmiObject -Class Win32_BaseBoard | Select-Object -ExpandProperty SerialNumber")
+            cpu_id = execute_powershell_command("Get-WmiObject -Class Win32_Processor | Select-Object -ExpandProperty ProcessorId")
 
         elif system == "Linux":
-            # 从/sys/文件系统中读取，通常不需要root权限
             try:
-                with open('/sys/class/dmi/id/board_serial') as f:
+                with open('/sys/class/dmi/id/board_serial', 'r') as f:
                     board_serial = f.read().strip()
             except Exception:
-                # 备用方案：使用dmidecode，可能需要权限
-                board_serial = subprocess.check_output('sudo dmidecode -s baseboard-serial-number', shell=True).decode().strip()
+                try:  # 备用方案，可能需要权限，且某些系统没有dmidecode或没有序列号
+                    board_serial = subprocess.check_output('sudo dmidecode -s baseboard-serial-number', shell=True, text=True).strip()
+                except Exception as e_bs:
+                    print(f"获取Linux主板序列号失败: {e_bs}")
 
-            # CPU信息通常在/proc/cpuinfo中，但没有统一的ID，我们组合关键信息
-            cpu_info_raw = subprocess.check_output('cat /proc/cpuinfo', shell=True).decode()
-            for line in cpu_info_raw.split('\n'):
-                if "vendor_id" in line or "model name" in line:
-                    cpu_id += line.split(':')[1].strip()
+            try:
+                # 尝试从 /proc/cpuinfo 获取一个组合的 CPU 标识
+                # 注意：这不是一个标准化的 "ProcessorId"，不同架构和内核版本可能不同
+                cpu_info_raw = subprocess.check_output('cat /proc/cpuinfo', shell=True, text=True)
+                temp_cpu_id_parts = []
+                for line in cpu_info_raw.split('\n'):
+                    if "vendor_id" in line or "model name" in line or "processor" in line and ":" in line:
+                        # 取冒号后的值并去除多余空格
+                        part = line.split(':', 1)[1].strip()
+                        if part:
+                            temp_cpu_id_parts.append(part)
+                cpu_id = "-".join(sorted(list(set(temp_cpu_id_parts))))  # 去重并排序组合
+            except Exception as e_cpu:
+                print(f"获取Linux CPU信息失败: {e_cpu}")
 
         elif system == "Darwin":  # macOS
-            # 使用ioreg工具获取
-            board_serial = subprocess.check_output("ioreg -l | grep IOPlatformSerialNumber", shell=True).decode().split('"')[3]
-            # Mac的CPU ID不易直接获取，但主板序列号已足够唯一和稳定
-            cpu_id = board_serial
+            try:
+                board_serial = subprocess.check_output("ioreg -l | grep IOPlatformSerialNumber", shell=True, text=True).split('"')[
+                    3
+                ]  # IOPlatformSerialNumber = "THIS_VALUE"
+            except Exception as e_bs_mac:
+                print(f"获取macOS主板序列号失败: {e_bs_mac}")
 
-        # --- 获取所有物理网卡的MAC地址 (使用psutil跨平台) ---
-        # psutil比uuid.getnode()更可靠，能获取所有网卡
-        for interface, addrs in psutil.net_if_addrs().items():
-            # 过滤掉本地回环和没有MAC地址的接口
-            if interface == 'lo' or not any(addr.family == psutil.AF_LINK for addr in addrs):
-                continue
-            for addr in addrs:
-                if addr.family == psutil.AF_LINK:
-                    mac_addresses.append(addr.address.upper())
+            # macOS 不容易获取稳定的CPU ID，主板序列号通常足够唯一
+            # 如果确实需要，可以尝试 system_profiler SPHardwareDataType | grep "Processor Name" 等
+            # 但这里我们为了稳定性，如果board_serial获取到了，可以用它的一部分或全部作为cpu_id的补充
+            cpu_id = board_serial  # 简单复用，或保持为空如果board_serial也没有
 
-        # 对MAC地址进行排序，确保每次生成的顺序都一致
-        mac_addresses.sort()
+        # 获取所有物理网卡的MAC地址 (使用psutil跨平台)
+        try:
+            for interface, addrs in psutil.net_if_addrs().items():
+                is_loopback = getattr(psutil.net_if_stats().get(interface, object()), 'isup', False) and interface.lower().startswith('lo')
+                if is_loopback:
+                    continue
+
+                for addr in addrs:
+                    if addr.family == psutil.AF_LINK:  # AF_LINK 通常表示MAC地址
+                        mac_addresses.append(addr.address.upper())
+            mac_addresses.sort()  # 排序以保证顺序一致性
+        except Exception as e_mac:
+            print(f"获取MAC地址时出错: {e_mac}")
 
     except Exception as e:
-        # 如果获取任何硬件信息失败，打印错误但程序继续
-        # 保证在特殊环境（如虚拟机、权限不足）下程序不会崩溃
-        print(f"[警告] 获取硬件信息时出错: {e}。哈希可能不够准确。")
+        print(f"[警告] 获取硬件信息时发生意外错误: {e}。哈希可能不够准确。")
 
-    # --- 组合并生成最终哈希 ---
-    # 将所有获取到的信息拼接成一个长字符串
-    # 即使某个信息获取失败（为空字符串），也不影响整体流程
     combined_string = f"BOARD:{board_serial}-CPU:{cpu_id}-MACS:{''.join(mac_addresses)}"
-
-    # 使用SHA256生成哈希值
     final_hash = hashlib.sha256(combined_string.encode()).hexdigest()
-
     return final_hash
 
 

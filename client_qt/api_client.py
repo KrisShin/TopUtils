@@ -26,7 +26,6 @@ class ApiClient:
             response = httpx.post(f"{self.base_url}/order/auth/setup-totp", json={"order_id": order_id})
             response.raise_for_status()  # 如果状态码不是2xx，则抛出异常
             # 返回JSON中的URI字符串
-            
             return response.json().get("uri"), None
         except httpx.HTTPStatusError as e:
             return None, str(e)
@@ -34,8 +33,11 @@ class ApiClient:
     def confirm_totp(self, order_id: str, email: str, code: str):
         try:
             response = httpx.post(f"{self.base_url}/order/auth/confirm-totp", json={"order_id": order_id, "email": email, "code": code})
+            if response.status_code == 200:
+                return response.json()['data']['token'], None
+            else:
+                return None, response.json()['detail'][0]['msg']
             response.raise_for_status()
-            return response.json(), None
         except httpx.HTTPStatusError as e:
             return None, str(e)
 
@@ -51,6 +53,9 @@ class ApiClient:
             else:
                 return None, response.json()['detail'][0]['msg']
         except httpx.HTTPStatusError as e:
+            from traceback import print_exc
+
+            print_exc()
             return None, str(e)
 
     def send_email_code(self, order_id: str):

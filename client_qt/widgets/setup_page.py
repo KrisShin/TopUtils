@@ -101,8 +101,10 @@ class SetupPage(QWidget):
     @Slot()
     def _on_email_submit(self):
         email = self.email_input.text().strip()
-        if not email:  # 简单的验证
+        if not email or '@' not in email or '.' not in email.split('@')[-1]:
+            # 简单的邮箱格式验证
             QMessageBox.warning(self, "提示", "请输入有效的邮箱地址。")
+            self.reset_buttons()
             return
         self.next_button.setEnabled(False)
         self.next_button.setText("处理中...")
