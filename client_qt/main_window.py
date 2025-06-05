@@ -1,50 +1,55 @@
-# main_window.py
+# client_qt/main_window.py
 from PySide6.QtWidgets import QMainWindow, QStackedWidget, QMessageBox
-from PySide6.QtCore import QThreadPool, Slot
+from PySide6.QtCore import QThreadPool, Slot, QTimer  # QTimerを追加
 from jose import jwt, JWTError
 
-# 导入API客户端和辅助函数
-from api_client import ApiClient  # 假设您的 ApiClient 在这里
-from widgets.utils import is_running_in_vm  # 从 widgets.utils 导入
+from api_client import ApiClient
+from widgets.utils import is_running_in_vm
 
 from worker import Worker
 
-# 导入我们已经定义好的所有UI页面
 from widgets.loading_page import LoadingPage
 from widgets.setup_page import SetupPage
 from widgets.login_page import LoginPage
-from scripts.auto_click import MainAppPage
+
+# 确保从正确的路径导入 MainAppPage
+from scripts.auto_click import MainAppPage  # 假设它在 scripts 文件夹下
 
 
 class MainWindow(QMainWindow):
+    HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000  # 定期全局权限心跳检测
+
     def __init__(self, api_client: ApiClient):
         super().__init__()
         self.setWindowTitle("软件授权客户端")
         self.api = api_client
         self.thread_pool = QThreadPool()
-        self.user_data = {}  # 用于存储解码后的token信息
-        self.rebind_target_order_id = None  # 用于存储换绑时的目标订单ID
-        self.current_auth_operation = "login"  # "login" 或 "rebind_auth"
+        self.user_data = {}
+        self.rebind_target_order_id = None
+        self.current_auth_operation = "login"
 
-        # --- 1. 初始化UI页面 ---
         self.stacked_widget = QStackedWidget()
         self.setCentralWidget(self.stacked_widget)
 
         self.loading_page = LoadingPage()
         self.setup_page = SetupPage()
         # LoginPage 和 MainAppPage 将在需要时惰性加载
+        self.main_app_page = None  # 初始化为 None
+        self.auth_page_instance = None  # 初始化为 None
 
         self.stacked_widget.addWidget(self.loading_page)
         self.stacked_widget.addWidget(self.setup_page)
 
-        # --- 2. 连接静态页面的信号 ---
         self.setup_page.email_submitted.connect(self.on_email_submitted)
         self.setup_page.totp_confirmed.connect(self.on_totp_confirmed)
 
-        # --- 3. 启动应用初始流程 ---
+        # --- 心跳定时器 ---
+        self.heartbeat_timer = QTimer(self)
+        self.heartbeat_timer.timeout.connect(self.perform_heartbeat_check)
+        # ---
+
         self.run_initial_check()
 
-    # --- 通用工具方法 ---
     def run_in_background(self, fn, on_result, on_error=None, on_finished=None):
         worker = Worker(fn)
         worker.signals.result.connect(on_result)
@@ -67,9 +72,6 @@ class MainWindow(QMainWindow):
             self.stacked_widget.addWidget(page_widget)
         self.stacked_widget.setCurrentWidget(page_widget)
 
-    # ===================================================================
-    # 流程一：应用启动时的初始检查
-    # ===================================================================
     def run_initial_check(self):
         self.show_page(self.loading_page)
         self.loading_page.set_status("正在检查运行环境...")
@@ -81,7 +83,6 @@ class MainWindow(QMainWindow):
             self.show_error("出于授权策略考虑，本软件禁止在虚拟机中使用。")
             self.close()
             return
-
         self.loading_page.set_status("正在绑定设备...")
         self.run_in_background(self.api.bind, self.on_bind_result)
 
@@ -92,16 +93,14 @@ class MainWindow(QMainWindow):
             self.show_error(f"设备绑定失败: {error}")
             self.close()
             return
-
         self.api.order_id = order_id
         self.loading_page.set_status("正在验证授权...")
         self.run_in_background(self.api.is_valid, self.on_valid_check_result)
 
     @Slot(object)
     def on_valid_check_result(self, result):
-        token, error = result
-        if error or not token:  # 如果is_valid报错或未返回token，则认为是新绑定
-            # self.show_error(f"授权验证失败: {error}. 这可能是一个新绑定，请继续设置。")
+        token_str, error = result  # is_valid 返回的是 token 字符串
+        if error or not token_str:
             self.user_data['order_id'] = self.api.order_id
             self.show_page(self.setup_page)
             self.setup_page.show_email_step()
@@ -109,11 +108,12 @@ class MainWindow(QMainWindow):
 
         try:
             secret_key = '_'.join((self.api.tool_code, self.api.device_hash, self.api.order_id))
-            self.user_data = jwt.decode(token, secret_key, algorithms=["HS256"])
-            self.user_data['order_id'] = self.api.order_id
+            decoded_token = jwt.decode(token_str, secret_key, algorithms=["HS256"])
+            self.user_data = decoded_token  # 存储解码后的 token
+            self.user_data['order_id'] = self.api.order_id  # 确保 order_id 也在 user_data 中
         except JWTError as e:
             self.show_error(f"令牌无效或已损坏: {e}")
-            self.user_data['order_id'] = self.api.order_id  # 即使token解析失败，order_id还是要设置
+            self.user_data['order_id'] = self.api.order_id
             self.show_page(self.setup_page)
             self.setup_page.show_email_step()
             return
@@ -122,11 +122,8 @@ class MainWindow(QMainWindow):
             self.show_page(self.setup_page)
             self.setup_page.show_email_step()
         else:
-            self.setup_login_page(mode="login")  # 初始进入登录模式
+            self.setup_login_page(mode="login")
 
-    # ===================================================================
-    # 流程二：首次设置 / 邮箱输入 / 换绑判断
-    # ===================================================================
     @Slot(str)
     def on_email_submitted(self, email):
         self.user_data['email'] = email
@@ -148,12 +145,13 @@ class MainWindow(QMainWindow):
             return
 
         status = data.get("status")
-        if status == "ok":
+        if status == "ok":  # 新用户，或邮箱未绑定到其他订单
             self.loading_page.set_status(f"为新用户 {self.user_data['email']} 请求TOTP授权...")
             self.show_page(self.loading_page)
+            # order_id 用于 setup_totp 应该是当前设备的 order_id
             self.run_in_background(lambda: self.api.setup_totp(self.api.order_id), self.on_totp_uri_received, on_finished=self.setup_page.reset_buttons)
-        elif status == "rebind_required":
-            self.rebind_target_order_id = data.get("existing_order_id")
+        elif status == "rebind_required":  # 邮箱已绑定到其他订单
+            self.rebind_target_order_id = data.get("existing_order_id")  # 这是旧设备的 order_id
             reply = QMessageBox.question(
                 self,
                 "设备换绑确认",
@@ -162,11 +160,14 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
-                # ---【新逻辑起点】---
-                # 用户同意换绑，进入换绑前的身份验证步骤
                 self.show_info("为了安全，请先验证您的身份以完成设备换绑。")
-                self.setup_login_page(mode="rebind_auth")  # 使用登录页进行换绑验证
-                # ---【新逻辑终点】---
+                # 注意：此时 self.api.order_id 仍然是当前新设备的 order_id
+                # rebind API 调用时，它会使用 self.api.device_hash (新设备的)
+                # 而 rebind API 中的 order_id 参数应为 None 或当前 order_id (api_client.rebind 中处理)
+                # self.api.order_id 将在 rebind 成功后更新为 rebind_target_order_id
+                self.user_data['order_id'] = self.api.order_id  # 确保 user_data 中有 order_id
+                self.api.order_id = self.api.order_id  # 确认 api.order_id 也是当前设备的
+                self.setup_login_page(mode="rebind_auth")
             else:
                 self.show_page(self.setup_page)
                 self.setup_page.show_email_step()
@@ -175,9 +176,8 @@ class MainWindow(QMainWindow):
             self.show_page(self.setup_page)
             self.setup_page.show_email_step()
 
-    # --- （首次设置TOTP的 on_totp_uri_received, on_totp_confirmed, on_totp_confirm_result 保持不变）---
     @Slot(object)
-    def on_totp_uri_received(self, result):  # 主要用于首次设置
+    def on_totp_uri_received(self, result):
         uri, error = result
         if error:
             self.show_error(f"获取TOTP信息失败: {error}")
@@ -194,9 +194,10 @@ class MainWindow(QMainWindow):
         self.show_page(self.setup_page)
 
     @Slot(str)
-    def on_totp_confirmed(self, code):  # 主要用于首次设置
+    def on_totp_confirmed(self, code):  # 首次设置 TOTP
         self.loading_page.set_status("正在确认首次TOTP绑定...")
         self.show_page(self.loading_page)
+        # confirm_totp 使用的是当前设备的 order_id (self.user_data['order_id'] 应该等于 self.api.order_id)
         self.run_in_background(
             lambda: self.api.confirm_totp(self.user_data['order_id'], self.user_data['email'], code),
             self.on_totp_confirm_result,
@@ -204,82 +205,94 @@ class MainWindow(QMainWindow):
         )
 
     @Slot(object)
-    def on_totp_confirm_result(self, result):  # 主要用于首次设置
-        data, error = result
-        if error:
-            self.show_error(f"TOTP确认失败: {error}")
+    def on_totp_confirm_result(self, result):  # 首次设置 TOTP 结果
+        token_str, error = result  # confirm_totp 返回 token 字符串
+        if error or not token_str:
+            self.show_error(f"TOTP确认失败: {error or '未返回令牌'}")
             self.show_page(self.setup_page)
             self.setup_page.show_totp_step(self.user_data.get('_last_uri_for_retry', ''))
             return
+
+        try:
+            # 解码 confirm_totp 返回的 token
+            secret_key = '_'.join((self.api.tool_code, self.api.device_hash, self.user_data['order_id']))
+            decoded_token = jwt.decode(token_str, secret_key, algorithms=["HS256"])
+            self.user_data.update(decoded_token)  # 更新 user_data
+        except JWTError as e:
+            self.show_error(f"首次绑定后的令牌解析失败: {e}")
+            # 即使解析失败，也尝试进入主应用页，后续的心跳或操作会要求重新登录
+
         self.show_info("身份验证器绑定成功！欢迎使用。")
-        self.setup_main_app_page()
+        self.setup_main_app_page()  # 使用更新后的 self.user_data
 
-    # ===================================================================
-    # 流程三：用户登录 / 换绑身份验证
-    # ===================================================================
     def setup_login_page(self, mode: str = "login"):
-        self.current_auth_operation = mode  # 设置当前操作模式
+        self.current_auth_operation = mode
 
-        if not hasattr(self, 'auth_page_instance') or self.auth_page_instance is None:
-            self.auth_page_instance = LoginPage(email=self.user_data['email'])
-            # 根据模式连接不同的信号处理槽
-            if mode == "login":
-                self.auth_page_instance.login_requested.connect(self.on_login_requested_slot)
-                self.auth_page_instance.email_code_requested.connect(self.on_login_email_code_requested_slot)
-            elif mode == "rebind_auth":
-                self.auth_page_instance.login_requested.connect(self.on_rebind_auth_code_submitted_slot)
-                self.auth_page_instance.email_code_requested.connect(self.on_rebind_auth_email_code_requested_slot)
+        # LoginPage 初始化或更新
+        if self.auth_page_instance is None:
+            self.auth_page_instance = LoginPage(email=self.user_data.get('email', "用户"))  # 使用 get 避免 KeyError
             self.stacked_widget.addWidget(self.auth_page_instance)
         else:
-            # 如果页面已存在，更新其状态并重新连接信号以匹配当前模式
-            self.auth_page_instance.user_email = self.user_data['email']
-            self.auth_page_instance.welcome_label.setText(f"授权验证 - {self.user_data['email']}" if mode == "rebind_auth" else f"你好, {self.user_data['email']}")
+            self.auth_page_instance.user_email = self.user_data.get('email', "用户")
+            self.auth_page_instance.welcome_label.setText(
+                f"授权验证 - {self.user_data.get('email', '用户')}" if mode == "rebind_auth" else f"你好, {self.user_data.get('email', '用户')}"
+            )
             self.auth_page_instance.reset_login_buttons()
 
-            # 断开旧连接，连接新模式的槽
-            try:
-                self.auth_page_instance.login_requested.disconnect()
-            except RuntimeError:
-                pass  # 如果没有连接，会抛出错误，忽略
-            try:
-                self.auth_page_instance.email_code_requested.disconnect()
-            except RuntimeError:
-                pass
+        # 断开旧连接 (放在前面，避免重复连接)
+        try:
+            self.auth_page_instance.login_requested.disconnect()
+        except RuntimeError:
+            pass
+        try:
+            self.auth_page_instance.email_code_requested.disconnect()
+        except RuntimeError:
+            pass
 
-            if mode == "login":
-                self.auth_page_instance.login_requested.connect(self.on_login_requested_slot)
-                self.auth_page_instance.email_code_requested.connect(self.on_login_email_code_requested_slot)
-            elif mode == "rebind_auth":
-                self.auth_page_instance.login_requested.connect(self.on_rebind_auth_code_submitted_slot)
-                self.auth_page_instance.email_code_requested.connect(self.on_rebind_auth_email_code_requested_slot)
+        # 根据模式连接信号
+        if mode == "login":
+            self.auth_page_instance.login_requested.connect(self.on_login_requested_slot)
+            self.auth_page_instance.email_code_requested.connect(self.on_login_email_code_requested_slot)
+        elif mode == "rebind_auth":
+            self.auth_page_instance.login_requested.connect(self.on_rebind_auth_code_submitted_slot)  # 连接到换绑验证码提交
+            self.auth_page_instance.email_code_requested.connect(self.on_rebind_auth_email_code_requested_slot)  # 连接到换绑邮件码请求
 
         self.show_page(self.auth_page_instance)
 
-    # --- 常规登录的槽函数 ---
     @Slot(str, str)
-    def on_login_requested_slot(self, method_type, code):
+    def on_login_requested_slot(self, method_type, code):  # 常规登录
         self.auth_page_instance.on_login_start()
+        # login API 使用当前设备的 order_id
+        current_order_id = self.user_data.get('order_id', self.api.order_id)
+        if not current_order_id:
+            self.show_error("无法获取订单ID进行登录。")
+            self.auth_page_instance.reset_login_buttons()
+            return
         self.run_in_background(
-            lambda: self.api.login(self.user_data['order_id'], code, method_type),
-            self.on_login_result,  # 连接到常规登录结果处理
+            lambda: self.api.login(current_order_id, code, method_type),
+            self.on_login_result,
             on_finished=self.auth_page_instance.reset_login_buttons,
         )
 
     @Slot()
-    def on_login_email_code_requested_slot(self):
+    def on_login_email_code_requested_slot(self):  # 常规登录邮件码
         self.auth_page_instance.send_code_button.setText("发送中...")
         self.auth_page_instance.send_code_button.setEnabled(False)
-        # 常规登录时，邮件码是针对当前 user_data['order_id'] 的邮箱 self.user_data['email']
+        current_order_id = self.user_data.get('order_id', self.api.order_id)
+        if not current_order_id:
+            self.show_error("无法获取订单ID发送邮件码。")
+            self.auth_page_instance.on_email_code_sent(False, "内部错误")
+            return
         self.run_in_background(
-            lambda: self.api.send_email_code(self.api.order_id),  # 假设send_email_code通过email和tool_code定位
-            self.on_auth_email_code_sent_result,  # 通用处理邮件码发送结果
+            lambda: self.api.send_email_code(order_id=current_order_id),
+            self.on_auth_email_code_sent_result,
         )
 
-    # --- 换绑验证的槽函数 ---
     @Slot(str, str)
-    def on_rebind_auth_code_submitted_slot(self, check_method, code):
-        """当为换绑验证提交验证码时"""
-        self.auth_page_instance.on_login_start()  # 复用按钮状态
+    def on_rebind_auth_code_submitted_slot(self, check_method, code):  # 换绑验证提交
+        self.auth_page_instance.on_login_start()
+        self.api.order_id = self.api.order_id  # 确保是当前设备的 order_id (即新设备)
+        # Rebind API 应该基于 email 找到旧订单
         self.run_in_background(
             lambda: self.api.rebind(email=self.user_data['email'], check_method=check_method, code=code),
             self.on_rebind_finished_result,
@@ -287,66 +300,204 @@ class MainWindow(QMainWindow):
         )
 
     @Slot()
-    def on_rebind_auth_email_code_requested_slot(self):
-        """当为换绑验证请求邮件码时"""
+    def on_rebind_auth_email_code_requested_slot(self):  # 换绑验证邮件码
         self.auth_page_instance.send_code_button.setText("发送中...")
         self.auth_page_instance.send_code_button.setEnabled(False)
+        # 发送邮件码时，是针对与该邮箱关联的已存在授权的订单 (即旧订单)
+        # 所以应该使用 rebind_target_order_id
+        if not self.rebind_target_order_id:
+            self.show_error("换绑目标订单ID未知，无法发送邮件码。")
+            self.auth_page_instance.on_email_code_sent(False, "内部错误")
+            return
         self.run_in_background(
             lambda: self.api.send_email_code(order_id=self.rebind_target_order_id),
-            self.on_auth_email_code_sent_result,  # 通用处理邮件码发送结果
+            self.on_auth_email_code_sent_result,
         )
 
     @Slot(object)
-    def on_rebind_finished_result(self, result):  # 已存在，处理换绑API调用后的结果
-        token, error = result
-        if error:
-            self.show_error(f"设备换绑失败: {error}")
-            self.show_page(self.setup_page)  # 失败则回到设置流程起点
+    def on_rebind_finished_result(self, result):
+        token_str, error = result  # rebind API 返回新 token 字符串
+        if error or not token_str:
+            self.show_error(f"设备换绑失败: {error or '未返回令牌'}")
+            self.show_page(self.setup_page)
             self.setup_page.show_email_step()
             return
-        secret_key = '_'.join((self.api.tool_code, self.api.device_hash, self.rebind_target_order_id, self.user_data['email']))
-        self.user_data = jwt.decode(token, secret_key, algorithms=["HS256"])
-        self.rebind_target_order_id = None
-        self.api.order_id = self.rebind_target_order_id
-        self.user_data['order_id'] = self.rebind_target_order_id
-        self.show_info("设备换绑成功！24小时内只能换绑一次")
 
-        self.loading_page.set_status(f"为换绑订单 {self.api.order_id} 请求TOTP...")
-        self.setup_main_app_page()
+        # 换绑成功后，API 返回的 token 是针对新设备和旧订单的组合
+        # 所以解码时，order_id 应该是 rebind_target_order_id (即旧的那个，现在绑定到新设备了)
+        # device_hash 是当前新设备的 self.api.device_hash
+        try:
+            secret_key = '_'.join((self.api.tool_code, self.api.device_hash, self.rebind_target_order_id))
+            decoded_token = jwt.decode(token_str, secret_key, algorithms=["HS256"])
 
-    # --- 通用邮件码发送结果处理 ---
+            # 更新 MainWindow 的核心状态
+            self.api.order_id = self.rebind_target_order_id  # 非常重要：更新当前活动的 order_id
+            self.user_data = decoded_token
+            self.user_data['order_id'] = self.api.order_id  # 确保 user_data 也同步
+
+        except JWTError as e:
+            self.show_error(f"换绑后令牌解析失败: {e}")
+            self.show_page(self.setup_page)
+            self.setup_page.show_email_step()
+            return
+
+        self.rebind_target_order_id = None  # 清理
+        self.show_info("设备换绑成功！")  # 24小时限制由后端控制
+        self.setup_main_app_page()  # 使用更新后的 self.user_data (包含了换绑后的授权信息)
+
     @Slot(object)
-    def on_auth_email_code_sent_result(self, result):  # 改为通用名
+    def on_auth_email_code_sent_result(self, result):
         data, error = result
         success = error is None
         message = data.get("message", "已发送") if success else (error or "发送失败")
-
         if hasattr(self, 'auth_page_instance') and self.auth_page_instance:
             self.auth_page_instance.on_email_code_sent(success, message)
 
-    # --- 常规登录成功后的处理 ---
     @Slot(object)
-    def on_login_result(self, result):
-        data, error = result
-        if error:
-            self.show_error(f"登录失败: {error}")
+    def on_login_result(self, result):  # 常规登录结果
+        token_str, error = result  # login API 返回 token 字符串
+        if error or not token_str:
+            self.show_error(f"登录失败: {error or '未返回令牌'}")
+            # 不切换页面，让用户在登录页重试
             return
+
+        # 登录成功，解码 token 并更新 user_data
+        try:
+            secret_key = '_'.join((self.api.tool_code, self.api.device_hash, self.api.order_id, self.user_data['email']))
+            decoded_token = jwt.decode(token_str, secret_key, algorithms=["HS256"])
+            current_order_id = decoded_token.get('order_id', self.api.order_id)
+            self.user_data.update(decoded_token)  # 更新 user_data
+            self.user_data['order_id'] = current_order_id  # 再次确保
+            self.api.order_id = current_order_id  # 更新 api.order_id
+        except JWTError as e:
+            self.show_error(f"登录后令牌解析失败: {e}")
+            # 即使解析失败，也可能需要一个不同的流程，或者强制重新setup
+            return  # 停留在登录页或回到setup页
+
         self.setup_main_app_page()
 
-    # ===================================================================
-    # 流程四：主应用
-    # ===================================================================
     def setup_main_app_page(self):
-
-        if not hasattr(self, 'main_app_page') or self.main_app_page is None:
+        if self.main_app_page is None:
             self.main_app_page = MainAppPage(
                 email=self.user_data.get('email', '未知用户'),
                 api_client_instance=self.api,
                 initial_auth_token_data=self.user_data,  # 传递解码后的完整JWT数据
-                thread_pool_instance=self.thread_pool,  # 传递线程池
+                thread_pool_instance=self.thread_pool,
             )
             self.main_app_page.authorization_required.connect(self.handle_auth_required_from_app)
+            # --- 连接 MainAppPage 的新信号 ---
+            self.main_app_page.script_started.connect(self.on_script_started)
+            self.main_app_page.script_stopped.connect(self.on_script_stopped)
+            # ---
             self.stacked_widget.addWidget(self.main_app_page)
         else:
-            self.main_app_page.welcome_label.setText(f"授权成功！欢迎您，{self.user_data['email']}")
+            # 如果页面已存在，用新的授权信息更新它
+            self.main_app_page.user_email = self.user_data.get('email', '未知用户')
+            self.main_app_page.welcome_label.setText(f"授权成功！欢迎您，{self.user_data.get('email', '未知用户')}")
+            # 传递新的 token 数据给 MainAppPage 处理
+            self.main_app_page.handle_authorization_status(self.user_data)
+
         self.show_page(self.main_app_page)
+
+    @Slot()
+    def handle_auth_required_from_app(self):
+        self.show_info("您的授权已过期或需要验证，请重新登录。")
+        self.heartbeat_timer.stop()  # 如果脚本因为内部授权问题停止，也停止心跳
+        # self.user_data 清理一部分敏感信息可能比较好，或者保留 email
+        # self.user_data = {'order_id': self.api.order_id, 'email': self.user_data.get('email')}
+        self.setup_login_page(mode="login")
+
+    # --- 心跳逻辑 ---
+    @Slot()
+    def on_script_started(self):
+        """当 MainAppPage 中的脚本成功启动时调用"""
+        print("[MainWindow] Script started, starting heartbeat.")
+        if self.main_app_page:  # 确保页面存在
+            self.main_app_page.append_log("心跳检测已启动。")
+        self.heartbeat_timer.start(self.HEARTBEAT_INTERVAL_MS)
+        # 立即执行一次检查（可选，或者等待第一个 interval）
+        # self.perform_heartbeat_check()
+
+    @Slot()
+    def on_script_stopped(self):
+        """当 MainAppPage 中的脚本停止时调用（无论原因）"""
+        print("[MainWindow] Script stopped, stopping heartbeat.")
+        if self.main_app_page:  # 确保页面存在
+            self.main_app_page.append_log("心跳检测已停止。")
+        self.heartbeat_timer.stop()
+
+    @Slot()
+    def perform_heartbeat_check(self):
+        """执行心跳检查，调用 API 验证订阅状态"""
+        if not self.api.order_id:
+            print("[Heartbeat] No order_id, skipping check.")
+            self.heartbeat_timer.stop()  # 防止没有 order_id 时 계속 실행
+            return
+
+        print(f"[Heartbeat] Performing check for order_id: {self.api.order_id}")
+        if self.main_app_page:
+            self.main_app_page.append_log("正在执行心跳订阅检查...")
+
+        # api.check_subscription_status 期望 order_id
+        self.run_in_background(lambda: self.api.check_subscription_status(), self.on_heartbeat_check_result)
+
+    @Slot(object)
+    def on_heartbeat_check_result(self, result):
+        token_str, error = result  # check_subscription_status 返回 (token_str, error)
+        # token_str 是 JWT 字符串
+
+        if error or not token_str:
+            error_message = error or "心跳检查未返回有效令牌"
+            print(f"[Heartbeat] Check failed: {error_message}")
+            if self.main_app_page:
+                self.main_app_page.append_log(f"心跳检查失败: {error_message}")
+                self.main_app_page.force_stop_script("您的订阅已过期或验证失败，脚本已停止。\n请检查您的网络连接或续费后重试。")
+            self.heartbeat_timer.stop()  # 发生错误或订阅无效，停止心跳
+            # QMessageBox.warning(self, "订阅提醒", "您的订阅已过期或验证失败，脚本已停止。\n请续费后重试。")
+            # 此处已由 force_stop_script 弹窗，不再重复
+            # 根据具体策略，可能需要导航到登录页
+            # self.handle_auth_required_from_app()
+            return
+
+        # 心跳检查成功，获得了新的 token_str
+        try:
+            secret_key = '_'.join((self.api.tool_code, self.api.device_hash, self.api.order_id, self.user_data.get('email', '')))
+            new_decoded_token = jwt.decode(token_str, secret_key, algorithms=["HS256"])
+
+            # 更新 MainWindow 的 user_data
+            self.user_data.update(new_decoded_token)
+            self.user_data['order_id'] = self.api.order_id  # 再次确保
+
+            print("[Heartbeat] Check successful, token refreshed.")
+            if self.main_app_page:
+                self.main_app_page.append_log("心跳订阅检查成功，授权已刷新。")
+                # 将新的授权信息传递给 MainAppPage 更新其内部状态 (如倒计时)
+                self.main_app_page.handle_authorization_status(self.user_data)
+
+            # 重启心跳计时器，进行下一次检查 (如果仍然 active)
+            if self.heartbeat_timer.isActive():  # 如果上一次没被stop，则继续
+                self.heartbeat_timer.start(self.HEARTBEAT_INTERVAL_MS)
+            elif self.main_app_page and self.main_app_page.is_clicking_active:  # 如果因为某种原因停了但脚本还在跑，重新启动
+                self.heartbeat_timer.start(self.HEARTBEAT_INTERVAL_MS)
+
+        except JWTError as e:
+            error_message = f"心跳检查成功但令牌解析失败: {e}"
+            print(f"[Heartbeat] {error_message}")
+            if self.main_app_page:
+                self.main_app_page.append_log(error_message)
+                self.main_app_page.force_stop_script("授权信息更新失败，脚本已停止。\n请尝试重新登录。")
+            self.heartbeat_timer.stop()
+            # QMessageBox.warning(self, "授权错误", "授权信息更新失败，脚本已停止。")
+            # self.handle_auth_required_from_app()
+
+    # --- 结束心跳逻辑 ---
+
+    def closeEvent(self, event):
+        self.heartbeat_timer.stop()  # 关闭时停止心跳
+        if self.main_app_page:
+            # 确保 MainAppPage 的 closeEvent 被调用以清理其资源
+            # MainAppPage 的 closeEvent 通常由 QWidget 的关闭流程自动处理
+            # 如果需要显式调用，可以 self.main_app_page.closeEvent(event)
+            # 但通常不需要，除非 MainAppPage 不是一个 QWidget
+            pass
+        super().closeEvent(event)

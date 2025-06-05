@@ -145,9 +145,9 @@ class ApiClient(object):
         except Exception as e:  # 更通用的异常捕获
             return None, str(e)
         
-    def check_subscription_status(self, order_id: str):
+    def check_subscription_status(self):
         try:
-            response = httpx.post(f"{self.base_url}/order/sub-check", json={"order_id": order_id})
+            response = httpx.post(f"{self.base_url}/order/sub-check", json={"order_id": self.order_id})
             response.raise_for_status()
             token_str = response.json().get("data", {}).get("token")
             if not token_str:
