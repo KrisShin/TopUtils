@@ -20,7 +20,7 @@ from server.module.order.schemas import (
     TOTPSetupResponse,
     ToolDeviceBindRequest,
 )
-from server.module.order.utils import verify_totp_code
+from server.module.order.utils import varify_code, verify_totp_code
 
 router = APIRouter()
 
@@ -67,7 +67,7 @@ async def confirm_totp(request: TOTPConfirmRequest):
         'device_hash': order.device_info_hashed,
         'order_id': order.id,
         'email': order.email,
-        'expire_time': order.expire_time.timestamp(),
+        'expire_time': order.expire_time and order.expire_time.timestamp(),
     }
     encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id, order.email)), algorithm=ALGORITHM)
     return DataResponse(data={'token': encoded_jwt})
@@ -83,16 +83,9 @@ async def software_login(request: BindRequest):
     if not order.is_totp_enabled:
         raise BadRequest("请先绑定身份验证器")
 
-    if request.check_method == 1 and not DEBUG:
-        if not verify_totp_code(order.totp_secret, request.code):
-            raise BadRequest("验证码错误或失效")
-    elif request.check_method == 2:
-        request.code = request.code.strip().upper()  # 确保验证码是大写
-        if order.email_verify_code != request.code or order.email_verify_expire < get_now_UTC_time():
-            raise BadRequest("验证码错误或失效")
-        order.email_verify_code = None  # 验证成功后清除验证码
-        order.email_verify_expire = None
-        await order.save()
+    is_valid = await varify_code(request.check_method, order, request.code)
+    if is_valid is not True:
+        raise is_valid  # 如果验证失败，直接抛出异常
 
     # 检查设备哈希是否匹配
     if order.device_info_hashed != request.device_hash:
@@ -103,7 +96,7 @@ async def software_login(request: BindRequest):
         'device_hash': order.device_info_hashed,
         'order_id': order.id,
         'email': order.email,
-        'expire_time': order.expire_time.timestamp(),
+        'expire_time': order.expire_time and order.expire_time.timestamp(),
     }
     encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id, order.email)), algorithm=ALGORITHM)
     return DataResponse(data={'token': encoded_jwt})
@@ -147,19 +140,10 @@ async def rebind_device(request: ReBindRequest):
     if old_order.is_rebind_in_cooldown:
         raise TooManyRequest("换绑操作过于频繁，请24小时后再试")
 
-    if request.check_method == 1:
-        if not verify_totp_code(old_order.totp_secret, request.code):
-            raise AuthorizationFailed("动态码错误")
-    elif request.check_method == 2:
-        request.code = request.code.strip().upper()  # 确保验证码是大写
-        if old_order.email_verify_code != request.code or old_order.email_verify_expire < get_now_UTC_time():
-            raise BadRequest("验证码错误或失效")
-        old_order.email_verify_code = None  # 验证成功后清除验证码
-        old_order.email_verify_expire = None
-        await old_order.save()
-    else:
-        raise BadRequest("无效的验证方式")
-
+    is_valid = await varify_code(request.check_method, old_order, request.code)
+    if is_valid is not True:
+        raise is_valid  # 如果验证失败，直接抛出异常
+    
     # 执行换绑
     await Order.filter(id=request.order_id).delete()  # 删除当前设备的订单记录
     old_order.device_info_hashed = request.device_hash
@@ -208,7 +192,7 @@ async def is_valid(request: OrderIdRequest):
         'device_hash': order.device_info_hashed,
         'order_id': order.id,
         'email': order.email,
-        'expire_time': order.expire_time.timestamp(),
+        'expire_time': order.expire_time and order.expire_time.timestamp(),
     }
     encoded_jwt = jwt.encode(token_dict, '_'.join((order.tool_id, order.device_info_hashed, order.id)), algorithm=ALGORITHM)
     return DataResponse(data={'token': encoded_jwt})
@@ -257,7 +241,7 @@ async def check_subscription_status(request: OrderIdRequest):
         'device_hash': order.device_info_hashed,
         'order_id': order.id,
         'email': order.email,
-        'expire_time': order.expire_time.timestamp(),
+        'expire_time': order.expire_time and order.expire_time.timestamp(),
         'rest_time': (order.expire_time - utc_now).seconds,
         'reminder': (order.expire_time - utc_now) <= timedelta(minutes=5),  # 是否需要提醒,
     }
