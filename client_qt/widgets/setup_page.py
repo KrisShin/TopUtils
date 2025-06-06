@@ -45,8 +45,9 @@ class SetupPage(QWidget):
         self.email_input = QLineEdit()
         self.email_input.setPlaceholderText("your.email@example.com")
         self.next_button = QPushButton("下一步")
-
+         # 绑定回车信号到按钮点击
         self.next_button.clicked.connect(self._on_email_submit)
+        self.email_input.returnPressed.connect(self.next_button.click)
 
         layout.addWidget(info_label)
         layout.addWidget(self.email_input)

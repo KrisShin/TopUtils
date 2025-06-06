@@ -148,7 +148,6 @@ class ApiClient(object):
     def check_subscription_status(self):
         try:
             response = httpx.post(f"{self.base_url}/order/sub-check", json={"order_id": self.order_id})
-            response.raise_for_status()
             token_str = response.json().get("data", {}).get("token")
             if not token_str:
                 return None, "服务器未返回有效令牌"

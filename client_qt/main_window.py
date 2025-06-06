@@ -13,7 +13,7 @@ from widgets.setup_page import SetupPage
 from widgets.login_page import LoginPage
 
 # 确保从正确的路径导入 MainAppPage
-from scripts.auto_click import MainAppPage  # 假设它在 scripts 文件夹下
+from scripts.auto_click import WINDOW_TITLE, MainAppPage  # 假设它在 scripts 文件夹下
 
 
 class MainWindow(QMainWindow):
@@ -21,7 +21,8 @@ class MainWindow(QMainWindow):
 
     def __init__(self, api_client: ApiClient):
         super().__init__()
-        self.setWindowTitle("软件授权客户端")
+        self.setWindowTitle(WINDOW_TITLE)
+        # self.setWindowTitle("软件授权客户端")
         self.api = api_client
         self.thread_pool = QThreadPool()
         self.user_data = {}
@@ -327,7 +328,7 @@ class MainWindow(QMainWindow):
         # 所以解码时，order_id 应该是 rebind_target_order_id (即旧的那个，现在绑定到新设备了)
         # device_hash 是当前新设备的 self.api.device_hash
         try:
-            secret_key = '_'.join((self.api.tool_code, self.api.device_hash, self.rebind_target_order_id))
+            secret_key = '_'.join((self.api.tool_code, self.api.device_hash, self.rebind_target_order_id, self.user_data['email']))
             decoded_token = jwt.decode(token_str, secret_key, algorithms=["HS256"])
 
             # 更新 MainWindow 的核心状态
@@ -366,7 +367,7 @@ class MainWindow(QMainWindow):
             secret_key = '_'.join((self.api.tool_code, self.api.device_hash, self.api.order_id, self.user_data['email']))
             decoded_token = jwt.decode(token_str, secret_key, algorithms=["HS256"])
             current_order_id = decoded_token.get('order_id', self.api.order_id)
-            self.user_data.update(decoded_token)  # 更新 user_data
+            self.user_data=decoded_token  # 覆盖 user_data
             self.user_data['order_id'] = current_order_id  # 再次确保
             self.api.order_id = current_order_id  # 更新 api.order_id
         except JWTError as e:
@@ -381,7 +382,6 @@ class MainWindow(QMainWindow):
             self.main_app_page = MainAppPage(
                 email=self.user_data.get('email', '未知用户'),
                 api_client_instance=self.api,
-                initial_auth_token_data=self.user_data,  # 传递解码后的完整JWT数据
                 thread_pool_instance=self.thread_pool,
             )
             self.main_app_page.authorization_required.connect(self.handle_auth_required_from_app)
@@ -414,9 +414,9 @@ class MainWindow(QMainWindow):
         print("[MainWindow] Script started, starting heartbeat.")
         if self.main_app_page:  # 确保页面存在
             self.main_app_page.append_log("心跳检测已启动。")
-        self.heartbeat_timer.start(self.HEARTBEAT_INTERVAL_MS)
         # 立即执行一次检查（可选，或者等待第一个 interval）
-        # self.perform_heartbeat_check()
+        self.perform_heartbeat_check()
+        self.heartbeat_timer.start(self.HEARTBEAT_INTERVAL_MS)
 
     @Slot()
     def on_script_stopped(self):

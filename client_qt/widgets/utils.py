@@ -127,7 +127,6 @@ def is_running_in_vm():
 
     return False
 
-
 def get_device_hash():
     """
     生成一个更健壮、更稳定的设备唯一标识符。
@@ -142,6 +141,15 @@ def get_device_hash():
         if system == "Windows":
             board_serial = execute_powershell_command("Get-WmiObject -Class Win32_BaseBoard | Select-Object -ExpandProperty SerialNumber")
             cpu_id = execute_powershell_command("Get-WmiObject -Class Win32_Processor | Select-Object -ExpandProperty ProcessorId")
+            
+            try:
+                mac_addresses_str = execute_powershell_command(
+                    "Get-NetAdapter -Physical | Select-Object -ExpandProperty MacAddress"
+                )
+                if mac_addresses_str:
+                    mac_addresses = sorted([addr.replace('-', '').upper() for addr in mac_addresses_str.split()])
+            except Exception as e_mac_win:
+                print(f"在 Windows 上通过 PowerShell 获取物理 MAC 地址时出错: {e_mac_win}")
 
         elif system == "Linux":
             try:
@@ -167,8 +175,23 @@ def get_device_hash():
                 cpu_id = "-".join(sorted(list(set(temp_cpu_id_parts))))  # 去重并排序组合
             except Exception as e_cpu:
                 print(f"获取Linux CPU信息失败: {e_cpu}")
-
-        elif system == "Darwin":  # macOS
+            # 仍然使用 psutil 获取 MAC 地址，但可以增加过滤
+            try:
+                for interface, addrs in psutil.net_if_addrs().items():
+                    # 过滤掉 loopback 和虚拟接口 (如 veth, docker)
+                    if interface.lower().startswith(('lo', 'veth', 'docker')):
+                        continue
+                    # 尝试检查是否是虚拟设备（更可靠的方法）
+                    if 'virtual' in os.path.realpath(f'/sys/class/net/{interface}'):
+                        continue
+                    for addr in addrs:
+                        if addr.family == psutil.AF_LINK:
+                            mac_addresses.append(addr.address.upper())
+                mac_addresses.sort()
+            except Exception as e_mac_linux:
+                print(f"在 Linux 上获取 MAC 地址时出错: {e_mac_linux}")
+        
+        else: # macOS 和其他系统
             try:
                 board_serial = subprocess.check_output("ioreg -l | grep IOPlatformSerialNumber", shell=True, text=True).split('"')[
                     3
@@ -180,24 +203,22 @@ def get_device_hash():
             # 如果确实需要，可以尝试 system_profiler SPHardwareDataType | grep "Processor Name" 等
             # 但这里我们为了稳定性，如果board_serial获取到了，可以用它的一部分或全部作为cpu_id的补充
             cpu_id = board_serial  # 简单复用，或保持为空如果board_serial也没有
-
-        # 获取所有物理网卡的MAC地址 (使用psutil跨平台)
-        try:
-            for interface, addrs in psutil.net_if_addrs().items():
-                is_loopback = getattr(psutil.net_if_stats().get(interface, object()), 'isup', False) and interface.lower().startswith('lo')
-                if is_loopback:
-                    continue
-
-                for addr in addrs:
-                    if addr.family == psutil.AF_LINK:  # AF_LINK 通常表示MAC地址
-                        mac_addresses.append(addr.address.upper())
-            mac_addresses.sort()  # 排序以保证顺序一致性
-        except Exception as e_mac:
-            print(f"获取MAC地址时出错: {e_mac}")
+            try:
+                for interface, addrs in psutil.net_if_addrs().items():
+                    is_loopback = getattr(psutil.net_if_stats().get(interface, object()), 'isup', False) and interface.lower().startswith('lo')
+                    if is_loopback:
+                        continue
+                    for addr in addrs:
+                        if addr.family == psutil.AF_LINK:
+                            mac_addresses.append(addr.address.upper())
+                mac_addresses.sort()
+            except Exception as e_mac:
+                print(f"获取MAC地址时出错: {e_mac}")
 
     except Exception as e:
         print(f"[警告] 获取硬件信息时发生意外错误: {e}。哈希可能不够准确。")
 
+    # 使用排序后的稳定信息生成哈希
     combined_string = f"BOARD:{board_serial}-CPU:{cpu_id}-MACS:{''.join(mac_addresses)}"
     final_hash = hashlib.sha256(combined_string.encode()).hexdigest()
     return final_hash
