@@ -18,7 +18,7 @@ async def varify_code(check_method: int, old_order: Order, code: str) -> bool:
         return True
 
     if check_method == 1:
-        if not verify_totp_code(Order.totp_secret, code):
+        if not verify_totp_code(old_order.totp_secret, code):
             return AuthorizationFailed("动态码错误")
     elif check_method == 2:
         code = code.strip().upper()  # 确保验证码是大写
