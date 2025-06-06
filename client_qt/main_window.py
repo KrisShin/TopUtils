@@ -13,7 +13,7 @@ from widgets.setup_page import SetupPage
 from widgets.login_page import LoginPage
 
 # 确保从正确的路径导入 MainAppPage
-from scripts.auto_click import WINDOW_TITLE, MainAppPage  # 假设它在 scripts 文件夹下
+from client_qt.scripts.auto_click.auto_click import WINDOW_TITLE, MainAppPage  # 假设它在 scripts 文件夹下
 
 
 class MainWindow(QMainWindow):
@@ -216,7 +216,7 @@ class MainWindow(QMainWindow):
 
         try:
             # 解码 confirm_totp 返回的 token
-            secret_key = '_'.join((self.api.tool_code, self.api.device_hash, self.user_data['order_id']))
+            secret_key = '_'.join((self.api.tool_code, self.api.device_hash, self.api.order_id, self.user_data['email']))
             decoded_token = jwt.decode(token_str, secret_key, algorithms=["HS256"])
             self.user_data.update(decoded_token)  # 更新 user_data
         except JWTError as e:

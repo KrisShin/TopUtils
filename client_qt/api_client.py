@@ -8,7 +8,6 @@ from widgets.utils import get_device_hash
 
 # --- 配置 ---
 BASE_URL = "https://util.toputils.top/api"  # 您的 FastAPI 服务器地址
-TOOL_CODE = '2ab2171ad8ba4521baf98ac5ff78a746'
 
 
 class ApiClient(object):
@@ -16,7 +15,7 @@ class ApiClient(object):
 
     def __init__(self, base_url):
         self.base_url = base_url
-        self.tool_code = TOOL_CODE
+        self.tool_code = None
         self.order_id = None  # 用于存储订单ID
         self.device_hash = get_device_hash()  # 获取当前设备的唯一标识符
 
@@ -26,7 +25,7 @@ class ApiClient(object):
             response = httpx.post(f"{self.base_url}/order/auth/setup-totp", json={"order_id": order_id})
             if response.status_code == 200:
                 return response.json().get("uri"), None
-            elif response.status_code < 500: 
+            elif response.status_code < 500:
                 return None, response.json()['detail'][0]['msg']
             else:
                 response.raise_for_status()
@@ -38,7 +37,7 @@ class ApiClient(object):
             response = httpx.post(f"{self.base_url}/order/auth/confirm-totp", json={"order_id": order_id, "email": email, "code": code})
             if response.status_code == 200:
                 return response.json()['data']['token'], None
-            elif response.status_code < 500: 
+            elif response.status_code < 500:
                 return None, response.json()['detail'][0]['msg']
             else:
                 response.raise_for_status()
@@ -54,7 +53,7 @@ class ApiClient(object):
             )
             if response.status_code == 200:
                 return response.json()['data']['token'], None
-            elif response.status_code < 500: 
+            elif response.status_code < 500:
                 return None, response.json()['detail'][0]['msg']
             else:
                 response.raise_for_status()
@@ -70,7 +69,7 @@ class ApiClient(object):
             response = httpx.post(f"{self.base_url}/order/auth/send-email-code", json={"order_id": order_id})
             if response.status_code == 200:
                 return response.json(), None
-            elif response.status_code < 500: 
+            elif response.status_code < 500:
                 return None, response.json()['detail'][0]['msg']
             else:
                 response.raise_for_status()
@@ -92,7 +91,7 @@ class ApiClient(object):
             )
             if response.status_code == 200:
                 return response.json()['data']['token'], None
-            elif response.status_code < 500: 
+            elif response.status_code < 500:
                 return None, response.json()['detail'][0]['msg']
             else:
                 response.raise_for_status()
@@ -105,7 +104,7 @@ class ApiClient(object):
             if response.status_code == 200:
                 self.order_id = response.json()['data']['order_id']  # 保存订单ID
                 return response.json()['data']['order_id'], None
-            elif response.status_code < 500: 
+            elif response.status_code < 500:
                 return None, response.json()['detail'][0]['msg']
             else:
                 response.raise_for_status()
@@ -118,7 +117,7 @@ class ApiClient(object):
             response = httpx.post(f"{self.base_url}/order/is-valid", json={"order_id": self.order_id})
             if response.status_code == 200:
                 return response.json()['data']['token'], None
-            elif response.status_code < 500: 
+            elif response.status_code < 500:
                 return None, response.json()['detail'][0]['msg']
             else:
                 response.raise_for_status()
@@ -133,7 +132,7 @@ class ApiClient(object):
             )
             if response.status_code == 200:
                 return response.json()['data'], None
-            elif response.status_code < 500: 
+            elif response.status_code < 500:
                 return None, response.json()['detail'][0]['msg']
             else:
                 response.raise_for_status()
@@ -144,7 +143,7 @@ class ApiClient(object):
             return None, str(e)
         except Exception as e:  # 更通用的异常捕获
             return None, str(e)
-        
+
     def check_subscription_status(self):
         try:
             response = httpx.post(f"{self.base_url}/order/sub-check", json={"order_id": self.order_id})
@@ -153,7 +152,7 @@ class ApiClient(object):
                 return None, "服务器未返回有效令牌"
             if response.status_code == 200:
                 return token_str, None
-            elif response.status_code < 500: 
+            elif response.status_code < 500:
                 return None, response.json()['detail'][0]['msg']
             else:
                 response.raise_for_status()

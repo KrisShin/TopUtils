@@ -12,6 +12,7 @@ from jose import JWTError, jwt
 from api_client import ApiClient
 
 WINDOW_TITLE = '自动点击器v1.0.0 - TopUtils'
+TOOL_CODE = '2ab2171ad8ba4521baf98ac5ff78a746'
 
 
 class AutoClickerThread(QThread):
