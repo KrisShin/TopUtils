@@ -13,7 +13,8 @@ from widgets.setup_page import SetupPage
 from widgets.login_page import LoginPage
 
 # 确保从正确的路径导入 MainAppPage
-from client_qt.scripts.auto_click.auto_click import WINDOW_TITLE, MainAppPage  # 假设它在 scripts 文件夹下
+# from scripts.auto_click.auto_click import WINDOW_TITLE, MainAppPage,TOOL_CODE  # 假设它在 scripts 文件夹下
+from scripts.key_ghost.keyScript import WINDOW_TITLE, MainAppPage,TOOL_CODE 
 
 
 class MainWindow(QMainWindow):
@@ -24,6 +25,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(WINDOW_TITLE)
         # self.setWindowTitle("软件授权客户端")
         self.api = api_client
+        self.api.tool_code = TOOL_CODE
         self.thread_pool = QThreadPool()
         self.user_data = {}
         self.rebind_target_order_id = None
@@ -477,7 +479,7 @@ class MainWindow(QMainWindow):
             # 重启心跳计时器，进行下一次检查 (如果仍然 active)
             if self.heartbeat_timer.isActive():  # 如果上一次没被stop，则继续
                 self.heartbeat_timer.start(self.HEARTBEAT_INTERVAL_MS)
-            elif self.main_app_page and self.main_app_page.is_clicking_active:  # 如果因为某种原因停了但脚本还在跑，重新启动
+            elif self.main_app_page and self.main_app_page.is_script_active:  # 如果因为某种原因停了但脚本还在跑，重新启动
                 self.heartbeat_timer.start(self.HEARTBEAT_INTERVAL_MS)
 
         except JWTError as e:

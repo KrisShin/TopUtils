@@ -61,7 +61,7 @@ class MainAppPage(QWidget):
         self.api = api_client_instance
         self.thread_pool = thread_pool_instance
         self.auto_clicker_thread = None
-        self.is_clicking_active = False
+        self.is_script_active = False
         self.keyboard_hook = None
         self.pressed_keys = set()
         self.auth_countdown_timer = QTimer(self)
@@ -230,8 +230,8 @@ class MainAppPage(QWidget):
         self.auth_status_label.setText(display_message)
         self.auth_status_label.setStyleSheet("color: red; font-weight: bold;")
         self.log_output.append(display_message + " 请重新验证或订阅。")
-        was_clicking = self.is_clicking_active
-        if self.is_clicking_active:
+        was_clicking = self.is_script_active
+        if self.is_script_active:
             self.stop_auto_clicker()
         self.enable_app_controls(False)
         if not was_clicking:
@@ -288,7 +288,7 @@ class MainAppPage(QWidget):
         if not self.start_button.isEnabled():
             self.log_output.append("无法启动：授权无效或功能被禁用。")
             return
-        if self.is_clicking_active:
+        if self.is_script_active:
             self.log_output.append("自动点击已在运行中。")
             return
         try:
@@ -300,7 +300,7 @@ class MainAppPage(QWidget):
         except ValueError:
             QMessageBox.warning(self, "输入错误", "请输入有效的数字作为间隔时间。")
             return
-        self.is_clicking_active = True
+        self.is_script_active = True
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
         self.interval_input.setEnabled(False)
@@ -313,7 +313,7 @@ class MainAppPage(QWidget):
 
     @Slot()
     def stop_auto_clicker(self):
-        if not self.is_clicking_active or not self.auto_clicker_thread:
+        if not self.is_script_active or not self.auto_clicker_thread:
             return
         self.log_output.append("正在发送停止请求...")
         if self.auto_clicker_thread.isRunning():
@@ -329,8 +329,8 @@ class MainAppPage(QWidget):
         self.reset_ui_to_stopped_state()
 
     def reset_ui_to_stopped_state(self):
-        was_active = self.is_clicking_active
-        self.is_clicking_active = False
+        was_active = self.is_script_active
+        self.is_script_active = False
         is_auth_valid = self.remaining_auth_seconds > 0
         self.start_button.setEnabled(is_auth_valid)
         self.interval_input.setEnabled(is_auth_valid)
@@ -343,7 +343,7 @@ class MainAppPage(QWidget):
     @Slot(str)
     def force_stop_script(self, message: str):
         self.log_output.append(f"强制停止脚本: {message}")
-        if self.is_clicking_active and self.auto_clicker_thread:
+        if self.is_script_active and self.auto_clicker_thread:
             self.auto_clicker_thread.stop()
         else:
             self.reset_ui_to_stopped_state()
