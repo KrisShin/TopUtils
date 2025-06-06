@@ -22,7 +22,7 @@ from api_client import ApiClient
 from worker import Worker
 
 # --- 配置 ---
-WINDOW_TITLE = '按键精灵v1.0.0 - TopUtils'
+WINDOW_TITLE = '鬼键v1.0.0 - TopUtils'
 TOOL_CODE = '2935b71b4381fcb768dac22230869cc'
 
 
@@ -132,7 +132,7 @@ class AutoKeyThread(QThread):
 
 
 class MainAppPage(QWidget):
-    """主应用页面，实现按键精灵功能，并集成授权验证。"""
+    """主应用页面，实现鬼键功能，并集成授权验证。"""
 
     # ... 后续的 MainAppPage 代码无需修改 ...
     authorization_required = Signal()
@@ -186,7 +186,7 @@ class MainAppPage(QWidget):
         main_layout.addWidget(self.welcome_label)
         main_layout.addWidget(self.auth_status_label)
 
-        # --- 按键精灵原生UI ---
+        # --- 鬼键原生UI ---
         window_layout = QHBoxLayout()
         window_layout.addWidget(QLabel("目标窗口:"))
         self.window_combo = QComboBox()
